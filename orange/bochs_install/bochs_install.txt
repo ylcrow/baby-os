@@ -1,0 +1,9 @@
+yum install vncserver
+vncpasswd
+vncserver :1 -geometry 800x600 -depth 24
+
+yum install gtk-xxx
+yum install gcc-c++
+./configure --enable-debugxx --enable-disasm --prefix=/opt
+make; make install
+
