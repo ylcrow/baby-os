@@ -6,7 +6,7 @@ org 0100h
 
 [SECTION .gdt]
 ;gdt            base addr --------  addr limit -------- desc attr
-desc_null:      Descriptor 0,       0,                  0               
+desc_null:      Descriptor 0,       0,                  0            ;null指针，用于填充ldtr  
 desc_normal:    Descriptor 0,       0ffffh,             DA_DRW          
 desc_16code:    Descriptor 0,       0ffffh,             DA_C            
 desc_32code:    Descriptor 0,       SEG_CODE32_LEN - 1, DA_C + DA_32    
