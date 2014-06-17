@@ -1,6 +1,6 @@
 %include  "pm.inc"
 
-org 0100h
+org 07c00h
 	jmp _code16_start
 
 
