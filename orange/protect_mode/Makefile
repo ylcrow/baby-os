@@ -8,7 +8,7 @@ BIN_BIOS := $(SRC:%.asm=%.bin)
 
 .PHONY : dos direct ready $(BIN_DOS) $(BIN_BIOS)
 
-dos: $(BIN_DOS)  ready
+dos: ready $(BIN_DOS)  
 	@echo -e "copy freedos.img"
 	@ln -sf ../shared/freedos.img  freedos.img
 	@echo -e "copy bochsrc"
@@ -21,7 +21,7 @@ dos: $(BIN_DOS)  ready
 	@cp $(BIN_DOS) /mnt/floppy/
 	@umount /mnt/floppy/
 
-direct: $(BIN_BIOS)
+direct: ready $(BIN_BIOS)
 	@echo -e "copy bochsrc"
 	@cp -f ../shared/bochsrc_bios  bochsrc
 	@echo -e "copy $(BIN_BIOS) to pm.img"
@@ -40,8 +40,9 @@ $(BIN_BIOS): $(SRC)
 	@nasm $< -o $@
 
 ready:
+	@ln -sf ../shared/pm.inc pm.inc 
 	@echo -e "copy pm.img"
 	@cp -f ../shared/pm.img  pm.img
 
 clean:
-	@rm -f $(BIN_BIOS)  $(BIN_DOS) bochsrc  freedos.img  pm.img
+	@rm -f $(BIN_BIOS)  $(BIN_DOS) bochsrc  freedos.img  pm.img pm.inc
