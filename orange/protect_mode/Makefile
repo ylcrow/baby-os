@@ -2,7 +2,7 @@
 # Makefile 
 ##################################################
 
-SRC := pmtest.asm
+SRC := pm_rm.asm
 BIN_DOS := $(SRC:%.asm=%.com)
 BIN_BIOS := $(SRC:%.asm=%.bin)
 
