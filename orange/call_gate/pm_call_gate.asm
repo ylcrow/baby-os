@@ -6,23 +6,34 @@ org 0100h
 
 [SECTION .gdt]
 ;gdt            base addr --------  addr limit -------- desc attr
-desc_null:      Descriptor 0,       0,                  0            ;null指针，用于填充ldtr  
-desc_normal:    Descriptor 0,       0ffffh,             DA_DRW          
-desc_16code:    Descriptor 0,       0ffffh,             DA_C            
-desc_32code:    Descriptor 0,       SEG_CODE32_LEN - 1, DA_C + DA_32    
-desc_display:   Descriptor 0B8000h, 0ffffh,             DA_DRW          
-desc_ldt:       Descriptor 0,       LDT_LEN - 1,        DA_LDT 
+desc_null:          Descriptor 0,               0,                      0            ;null指针，用于填充ldtr  
+desc_normal:        Descriptor 0,               0ffffh,                 DA_DRW          
+desc_16code:        Descriptor 0,               0ffffh,                 DA_C            
+desc_32code:        Descriptor 0,               SEG_CODE32_LEN - 1,     DA_C + DA_32    
+desc_display:       Descriptor 0B8000h,         0ffffh,                 DA_DRW          
+desc_stack:         Descriptor 0,               STACK_LEN - 1,          DA_DRWA + DA_32
+desc_ldt:           Descriptor 0,               LDT_LEN - 1,            DA_LDT 
+desc_codeb:         Descriptor 0,               CODEB_LEN - 1,          DA_C + DA_32
+desc_gate:          Gate       SELECTOR_CODEB,  0,             0,       DA_386CGate + DA_DPL0
+
+
 
 ;gdt ptr, gdt len
 GDT_LEN     equ     $ - desc_null
 gdt_ptr     dw      GDT_LEN - 1             ;16bits  gdt_limit (gdt_len - 1)
             dd      0                       ;desc_null why?  32bits  gdt_baseaddr 
+
 ;selector
 SELECTOR_NORMAL     equ desc_normal - desc_null
 SELECTOR_16CODE     equ desc_16code - desc_null
 SELECTOR_32CODE     equ desc_32code - desc_null
 SELECTOR_DISPLAY    equ desc_display - desc_null
+SELECTOR_STACK      equ desc_stack - desc_null
 SELECTOR_LDT        equ desc_ldt - desc_null
+SELECTOR_CODEB      equ desc_codeb - desc_null
+SELECTOR_CALLGATE   equ  desc_gate - desc_null
+
+
 ;END of section .gdt
 
 
@@ -37,7 +48,13 @@ LDT_LEN             equ   $ - ldt_desc_codea
 LDT_SELECTOR_CODEA  equ   ldt_desc_codea - ldt_desc_codea + SA_TIL
 ;END of section .ldt
 
-
+[SECTION .stack]
+ALIGN 32
+[BITS 32]
+_stack_start:
+    times  512 db 0
+STACK_LEN   equ   $ - _stack_start
+STACK_TOP   equ   STACK_LEN - 1
 
 
 ;
@@ -50,7 +67,7 @@ _begin:
     mov ds, ax
     mov es, ax
     mov ss, ax
-    mov sp, 0100h
+    mov sp, 0100h   ;向下增长
 
     mov [WAIT_FILL + 3], ax
     mov [real_mode_sp_value], sp
@@ -74,6 +91,29 @@ _begin:
     shr eax, 16
     mov byte [desc_16code + 4], al
     mov byte [desc_16code + 7], ah
+
+    ;fill desc_stack  baseaddr 
+    xor eax, eax   
+    mov ax, cs
+    shl eax, 4
+    add eax, _stack_start
+    mov word [desc_stack + 2], ax
+    shr eax, 16
+    mov byte [desc_stack + 4], al
+    mov byte [desc_stack + 7], ah
+
+
+    ;fill desc_codeb baseaddr 
+    xor eax, eax   
+    mov ax, cs
+    shl eax, 4
+    add eax, _codeb_start
+    mov word [desc_codeb+ 2], ax
+    shr eax, 16
+    mov byte [desc_codeb + 4], al
+    mov byte [desc_codeb + 7], ah
+
+
 
 
     ;fill ldt_desc_codea baseaddr 
@@ -126,7 +166,7 @@ _begin:
 	mov	cr0, eax
 
     ;jmp protect mode
-	jmp	dword SELECTOR_32CODE:0     ;dword 表明将偏移0编译后占用32bit
+	jmp	dword SELECTOR_32CODE:0     ;dword 表明将偏移0编译后占用32bit 0x12345678 -> 0x5678
 
     ;go back real mode
 REAL_MODE_ENTRY:
@@ -179,6 +219,11 @@ _code32_start:
     mov ax, SELECTOR_DISPLAY
     mov gs, ax
 
+    ;没用ss sp时, 后面用了call, 没出问题好奇怪
+	mov	ax, SELECTOR_STACK
+	mov	ss, ax				
+    mov	esp,STACK_TOP 
+
 	mov	edi, (80 * 11 + 79) * 2	; 屏幕第 11 行, 第 79 列。
 	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
 	mov	al, 'P'
@@ -189,13 +234,15 @@ _code32_start:
 	mov	ax, SELECTOR_LDT 
 	lldt	ax
 
-    jmp LDT_SELECTOR_CODEA:0    ;跳入局部任务 
+    call SELECTOR_CALLGATE:0    ;跳入调用门
+    jmp  LDT_SELECTOR_CODEA:0    ;跳入局部任务 
 
 	;jmp	SELECTOR_16CODE:0   ;使用jmp来恢复cs的高速缓冲区
 SEG_CODE32_LEN  equ  $ - _code32_start
 
 
 
+;CODE A为LDT做测试
 [SECTION .codea]
 ALIGN	32
 [BITS	32]
@@ -203,11 +250,27 @@ _codea_start:
     mov ax, SELECTOR_DISPLAY
     mov gs, ax
 
-	mov	edi, (80 * 12 + 79) * 2	; 屏幕第 11 行, 第 79 列。
+	mov	edi, (80 * 12 + 79) * 2	; 屏幕第 12 行, 第 79 列。
 	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
-	mov	al, 'c'
+	mov	al, 'a'
 	mov	[gs:edi], ax
 	jmp	SELECTOR_16CODE:0   ;使用jmp来恢复cs的高速缓冲区
 
 CODEA_LEN  equ	$ - _codea_start
 
+
+;CODE B为调用门做测试
+[SECTION .codeb]
+ALIGN	32
+[BITS 32]
+_codeb_start:
+    mov ax, SELECTOR_DISPLAY
+    mov gs, ax
+
+	mov	edi, (80 * 13 + 79) * 2	; 屏幕第 13 行, 第 79 列。
+	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
+	mov	al, 'b'
+	mov	[gs:edi], ax
+    retf
+CODEB_LEN   equ $ - _codeb_start
+   
