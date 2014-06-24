@@ -13,12 +13,11 @@ desc_32code:        Descriptor 0,               SEG_CODE32_LEN - 1,     DA_C + D
 desc_display:       Descriptor 0B8000h,         0ffffh,                 DA_DRW + DA_DPL3         
 desc_stack:         Descriptor 0,               STACK_LEN - 1,          DA_DRWA + DA_32
 desc_stack3:        Descriptor 0,               STACK3_LEN - 1,         DA_DRWA + DA_32 + DA_DPL3
-;desc_stack3:        Descriptor 0,               STACK3_LEN - 1,         DA_DRWA + DA_32 
 desc_ldt:           Descriptor 0,               LDT_LEN - 1,            DA_LDT 
 desc_codeb:         Descriptor 0,               CODEB_LEN - 1,          DA_C + DA_32
-;desc_codec:         Descriptor 0,               CODEC_LEN - 1,          DA_C + DA_32 + DA_DPL3
-desc_codec:         Descriptor 0,               CODEC_LEN - 1,          DA_C + DA_32 
-desc_gate:          Gate       SELECTOR_CODEB,  0,             0,       DA_386CGate + DA_DPL0
+desc_codec:         Descriptor 0,               CODEC_LEN - 1,          DA_C + DA_32 + DA_DPL3
+desc_tss:           Descriptor 0,               TSS_LEN - 1,            DA_386TSS
+desc_gate:          Gate       SELECTOR_CODEB,  0,             0,       DA_386CGate + DA_DPL3
 
 
 
@@ -37,12 +36,48 @@ SELECTOR_STACK3     equ desc_stack3 - desc_null + SA_RPL3
 ;SELECTOR_STACK3     equ desc_stack3 - desc_null 
 SELECTOR_LDT        equ desc_ldt - desc_null
 SELECTOR_CODEB      equ desc_codeb - desc_null
-;SELECTOR_CODEC      equ desc_codec - desc_null + SA_RPL3; retf时检查cs的rpl判断是否需要切换特权级
-SELECTOR_CODEC      equ desc_codec - desc_null 
-SELECTOR_CALLGATE   equ  desc_gate - desc_null
-
-
+SELECTOR_CODEC      equ desc_codec - desc_null + SA_RPL3; retf时检查cs的rpl判断是否需要切换特权级
+SELECTOR_TSS        equ  desc_tss - desc_null
+SELECTOR_CALLGATE   equ  desc_gate - desc_null + SA_RPL3
 ;END of section .gdt
+
+[SECTION .tss]
+ALIGN 32
+[BITS 32]
+_tss_start:
+		DD	0			    ; Back
+		DD	STACK_TOP		; esp0 		
+        DD	SELECTOR_STACK  ; ss0 
+		DD	0			    ; esp1 
+		DD	0			    ; ss1 
+		DD	0			    ; esp2 
+		DD	0			    ; ss2 
+		DD	0			    ; CR3
+		DD	0			    ; EIP
+		DD	0			    ; EFLAGS
+		DD	0			    ; EAX
+		DD	0			    ; ECX
+		DD	0			    ; EDX
+		DD	0			    ; EBX
+		DD	0			    ; ESP
+		DD	0			    ; EBP
+		DD	0			    ; ESI
+		DD	0			    ; EDI
+		DD	0			    ; ES
+		DD	0			    ; CS
+		DD	0			    ; SS
+		DD	0			    ; DS
+		DD	0			    ; FS
+		DD	0			    ; GS
+		DD	0			    ; LDT
+		DW	0			    ; 调试陷阱标志
+		DW	$ - _tss_start + 2	; I/O位图基址
+		DB	0ffh			; I/O位图结束标志
+TSS_LEN equ $ - _tss_start
+
+
+
+
 
 
 [SECTION .ldt]
@@ -90,6 +125,17 @@ _begin:
 
     mov [WAIT_FILL + 3], ax
     mov [real_mode_sp_value], sp
+
+
+    ;fill desc_tss baseaddr 
+    xor eax, eax   
+    mov ax, cs
+    shl eax, 4
+    add eax, _tss_start
+    mov word [desc_tss + 2], ax
+    shr eax, 16
+    mov byte [desc_tss + 4], al
+    mov byte [desc_tss + 7], ah
 
     ;fill desc_32code baseaddr 
     xor eax, eax   
@@ -276,13 +322,16 @@ _code32_start:
 	mov	al, 'P'
 	mov	[gs:edi], ax
 
+    mov ax, SELECTOR_TSS
+    ltr ax
+
     push SELECTOR_STACK3
     push STACK3_TOP
     push SELECTOR_CODEC ;作为cs保持到栈，cs代表的是调用者的dpl, 请求调用门时的rpl添加到哪里？？
     push 0
     retf
 
-    call SELECTOR_CALLGATE:0    ;跳入调用门 ;请求调用门时的rpl添加this吗?
+    ;call SELECTOR_CALLGATE:0    ;跳入调用门 ;请求调用门时的rpl添加this吗?
 
 	; Load LDT
 	mov	ax, SELECTOR_LDT 
@@ -323,12 +372,15 @@ _codeb_start:
 	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
 	mov	al, 'b'
 	mov	[gs:edi], ax
-    retf
+
+	jmp	SELECTOR_16CODE:0   ;直接跳回实模式
+
+    ;retf
 CODEB_LEN   equ $ - _codeb_start
    
 
 
-;CODE C为ring做测试
+;CODE C为ring变换做测试
 [SECTION .codec]
 ALIGN	32
 [BITS 32]
@@ -339,7 +391,10 @@ _codec_start:
 	mov	edi, (80 * 14 + 79) * 2	; 屏幕第 14 行, 第 79 列。
 	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
 	mov	al, 'c'
-	mov	[gs:edi], ax
+    mov	[gs:edi], ax
+
+    call SELECTOR_CALLGATE:0
+
     jmp $
 CODEC_LEN   equ $ - _codec_start
    

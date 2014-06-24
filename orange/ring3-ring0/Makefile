@@ -2,7 +2,7 @@
 # Makefile 
 ##################################################
 
-SRC := pm_ring.asm
+SRC := pm_ring2.asm
 BIN_DOS := $(SRC:%.asm=%.com)
 BIN_BIOS := $(SRC:%.asm=%.bin)
 
