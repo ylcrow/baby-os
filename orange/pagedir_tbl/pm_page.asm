@@ -13,6 +13,7 @@ desc_normal:        Descriptor 0,               0ffffh,                 DA_DRW
 desc_16code:        Descriptor 0,               0ffffh,                 DA_C            
 desc_32code:        Descriptor 0,               SEG_CODE32_LEN - 1,     DA_C + DA_32    
 desc_display:       Descriptor 0B8000h,         0ffffh,                 DA_DRW + DA_DPL3         
+desc_data:          Descriptor 0,               DATA_LEN - 1,           DA_DRW
 desc_stack:         Descriptor 0,               STACK_LEN - 1,          DA_DRWA + DA_32
 desc_stack3:        Descriptor 0,               STACK3_LEN - 1,         DA_DRWA + DA_32 + DA_DPL3
 desc_ldt:           Descriptor 0,               LDT_LEN - 1,            DA_LDT 
@@ -35,6 +36,7 @@ SELECTOR_NORMAL     equ desc_normal - desc_null
 SELECTOR_16CODE     equ desc_16code - desc_null
 SELECTOR_32CODE     equ desc_32code - desc_null
 SELECTOR_DISPLAY    equ desc_display - desc_null
+SELECTOR_DATA       equ desc_data - desc_null
 SELECTOR_STACK      equ desc_stack - desc_null
 SELECTOR_STACK3     equ desc_stack3 - desc_null + SA_RPL3
 ;SELECTOR_STACK3     equ desc_stack3 - desc_null 
@@ -116,9 +118,43 @@ STACK3_TOP   equ   STACK3_LEN - 1
 
 
 
+[SECTION .data]
+ALIGN	32
+[BITS	32]
+_data_start:
+; 实模式下使用这些符号
+real_mode_sp_value  dw  0
+_szPMMessage:		db	"In Protect Mode now. ^-^", 0Ah, 0Ah, 0	; 进入保护模式后显示此字符串
+_szMemChkTitle:		db	"BaseAddrL BaseAddrH LengthLow LengthHigh   Type", 0Ah, 0	; 进入保护模式后显示此字符串
+_szRAMSize			db	"RAM size:", 0
+_dwMCRNumber:		dd	0	; Memory Check Result
+_dwDispPos:			dd	(80 * 6 + 0) * 2	; 屏幕第 6 行, 第 0 列。
+_dwMemSize:			dd	0
+_MemChkBuf:	times	256	db	0
 
-;
-real_mode_sp_value  dw 0
+_ARDStruct:			; Address Range Descriptor Structure
+	_dwBaseAddrLow:		dd	0
+	_dwBaseAddrHigh:	dd	0
+	_dwLengthLow:		dd	0
+	_dwLengthHigh:		dd	0
+	_dwType:		dd	0
+
+; 保护模式下使用这些符号
+szPMMessage		equ	_szPMMessage	- $$
+szMemChkTitle		equ	_szMemChkTitle	- $$
+szRAMSize		equ	_szRAMSize	- $$
+dwDispPos		equ	_dwDispPos	- $$
+dwMemSize		equ	_dwMemSize	- $$
+dwMCRNumber		equ	_dwMCRNumber	- $$
+ARDStruct		equ	_ARDStruct	- $$
+	dwBaseAddrLow	equ	_dwBaseAddrLow	- $$
+	dwBaseAddrHigh	equ	_dwBaseAddrHigh	- $$
+	dwLengthLow	equ	_dwLengthLow	- $$
+	dwLengthHigh	equ	_dwLengthHigh	- $$
+	dwType		equ	_dwType		- $$
+MemChkBuf		equ	_MemChkBuf	- $$
+DATA_LEN  equ  $ - _data_start
+
 
 [SECTION .begincode]
 [BITS 16]
@@ -350,7 +386,7 @@ _code32_start:
 _setup_paging:
     mov ax, SELECTOR_PAGEDIR 
     mov es, ax
-    mov ecx, 1024
+    mov ecx, 1024; 1k个pde，每个pd指向一个4k大小的页表pte
     xor eax, eax
     xor edi, edi
     mov eax, PageTblBase | PG_P | PG_USU | PG_RWW
