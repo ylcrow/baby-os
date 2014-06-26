@@ -15,14 +15,8 @@ desc_32code:        Descriptor 0,               SEG_CODE32_LEN - 1,     DA_C + D
 desc_display:       Descriptor 0B8000h,         0ffffh,                 DA_DRW + DA_DPL3         
 desc_data:          Descriptor 0,               DATA_LEN - 1,           DA_DRW
 desc_stack:         Descriptor 0,               STACK_LEN - 1,          DA_DRWA + DA_32
-desc_stack3:        Descriptor 0,               STACK3_LEN - 1,         DA_DRWA + DA_32 + DA_DPL3
-desc_ldt:           Descriptor 0,               LDT_LEN - 1,            DA_LDT 
-desc_codeb:         Descriptor 0,               CODEB_LEN - 1,          DA_C + DA_32
-desc_codec:         Descriptor 0,               CODEC_LEN - 1,          DA_C + DA_32 + DA_DPL3
-desc_tss:           Descriptor 0,               TSS_LEN - 1,            DA_386TSS
 desc_pagedir:       Descriptor PageDirBase,     4095,                   DA_DRW ;4k
 desc_pagetbl:       Descriptor PageTblBase,     1023,                   DA_DRW | DA_LIMIT_4K; 4M
-desc_gate:          Gate       SELECTOR_CODEB,  0,             0,       DA_386CGate + DA_DPL3
 
 
 
@@ -38,66 +32,10 @@ SELECTOR_32CODE     equ desc_32code - desc_null
 SELECTOR_DISPLAY    equ desc_display - desc_null
 SELECTOR_DATA       equ desc_data - desc_null
 SELECTOR_STACK      equ desc_stack - desc_null
-SELECTOR_STACK3     equ desc_stack3 - desc_null + SA_RPL3
-;SELECTOR_STACK3     equ desc_stack3 - desc_null 
-SELECTOR_LDT        equ desc_ldt - desc_null
-SELECTOR_CODEB      equ desc_codeb - desc_null
-SELECTOR_CODEC      equ desc_codec - desc_null + SA_RPL3; retf时检查cs的rpl判断是否需要切换特权级
-SELECTOR_TSS        equ  desc_tss - desc_null
 SELECTOR_PAGEDIR    equ  desc_pagedir - desc_null
 SELECTOR_PAGETBL    equ  desc_pagetbl - desc_null
-SELECTOR_CALLGATE   equ  desc_gate - desc_null + SA_RPL3
 ;END of section .gdt
 
-[SECTION .tss]
-ALIGN 32
-[BITS 32]
-_tss_start:
-		DD	0			    ; Back
-		DD	STACK_TOP		; esp0 		
-        DD	SELECTOR_STACK  ; ss0 
-		DD	0			    ; esp1 
-		DD	0			    ; ss1 
-		DD	0			    ; esp2 
-		DD	0			    ; ss2 
-		DD	0			    ; CR3
-		DD	0			    ; EIP
-		DD	0			    ; EFLAGS
-		DD	0			    ; EAX
-		DD	0			    ; ECX
-		DD	0			    ; EDX
-		DD	0			    ; EBX
-		DD	0			    ; ESP
-		DD	0			    ; EBP
-		DD	0			    ; ESI
-		DD	0			    ; EDI
-		DD	0			    ; ES
-		DD	0			    ; CS
-		DD	0			    ; SS
-		DD	0			    ; DS
-		DD	0			    ; FS
-		DD	0			    ; GS
-		DD	0			    ; LDT
-		DW	0			    ; 调试陷阱标志
-		DW	$ - _tss_start + 2	; I/O位图基址
-		DB	0ffh			; I/O位图结束标志
-TSS_LEN equ $ - _tss_start
-
-
-
-
-
-
-[SECTION .ldt]
-;ldt
-ldt_desc_codea:   Descriptor 0,  CODEA_LEN -1,  DA_C + DA_32;
-
-;ldt len
-LDT_LEN             equ   $ - ldt_desc_codea
-
-;ldt selector
-LDT_SELECTOR_CODEA  equ   ldt_desc_codea - ldt_desc_codea + SA_TIL
-;END of section .ldt
 
 [SECTION .stack]
 ALIGN 32
@@ -106,15 +44,6 @@ _stack_start:
     times  512 db 0
 STACK_LEN   equ   $ - _stack_start
 STACK_TOP   equ   STACK_LEN - 1
-
-
-[SECTION .stack3]
-ALIGN 32
-[BITS 32]
-_stack3_start:
-    times  512 db 0
-STACK3_LEN   equ   $ - _stack3_start
-STACK3_TOP   equ   STACK3_LEN - 1
 
 
 
@@ -131,6 +60,8 @@ _dwMCRNumber:		dd	0	; Memory Check Result
 _dwDispPos:			dd	(80 * 6 + 0) * 2	; 屏幕第 6 行, 第 0 列。
 _dwMemSize:			dd	0
 _MemChkBuf:	times	256	db	0
+_szReturn			db	0Ah, 0
+_sPGE   			db	0AH, "PageDirEntry/PageTable Count: ", 0
 
 _ARDStruct:			; Address Range Descriptor Structure
 	_dwBaseAddrLow:		dd	0
@@ -140,6 +71,7 @@ _ARDStruct:			; Address Range Descriptor Structure
 	_dwType:		dd	0
 
 ; 保护模式下使用这些符号
+sPGE            equ _sPGE - $$
 szPMMessage		equ	_szPMMessage	- $$
 szMemChkTitle		equ	_szMemChkTitle	- $$
 szRAMSize		equ	_szRAMSize	- $$
@@ -153,6 +85,7 @@ ARDStruct		equ	_ARDStruct	- $$
 	dwLengthHigh	equ	_dwLengthHigh	- $$
 	dwType		equ	_dwType		- $$
 MemChkBuf		equ	_MemChkBuf	- $$
+szReturn		equ	_szReturn	- $$
 DATA_LEN  equ  $ - _data_start
 
 
@@ -169,15 +102,26 @@ _begin:
     mov [real_mode_sp_value], sp
 
 
-    ;fill desc_tss baseaddr 
-    xor eax, eax   
-    mov ax, cs
-    shl eax, 4
-    add eax, _tss_start
-    mov word [desc_tss + 2], ax
-    shr eax, 16
-    mov byte [desc_tss + 4], al
-    mov byte [desc_tss + 7], ah
+    ;get memory info
+    mov ebx, 0
+    mov di, _MemChkBuf
+.loop:
+    mov eax, 0E820h
+    mov ecx, 20
+    mov edx, 0534D4150h
+    int 15h
+    jc GET_ARDS_FAIL    ; if (cf != 0) {goto err;}
+    add di, 20
+    inc dword [_dwMCRNumber]
+    cmp ebx, 0          ; if (ebx != 0) {goto loop;}
+    jne .loop
+    jmp GET_ARDS_OK
+GET_ARDS_FAIL:
+    mov dword [_dwMCRNumber], 0
+GET_ARDS_OK:
+
+
+
 
     ;fill desc_32code baseaddr 
     xor eax, eax   
@@ -210,68 +154,15 @@ _begin:
     mov byte [desc_stack + 7], ah
 
 
-    ;fill desc_stack3  baseaddr 
+    ;fill desc_data baseaddr 
     xor eax, eax   
     mov ax, cs
     shl eax, 4
-    add eax, _stack3_start
-    mov word [desc_stack3 + 2], ax
+    add eax, _data_start
+    mov word [desc_data + 2], ax
     shr eax, 16
-    mov byte [desc_stack3 + 4], al
-    mov byte [desc_stack3 + 7], ah
-
-
-
-
-    ;fill desc_codeb baseaddr 
-    xor eax, eax   
-    mov ax, cs
-    shl eax, 4
-    add eax, _codeb_start
-    mov word [desc_codeb+ 2], ax
-    shr eax, 16
-    mov byte [desc_codeb + 4], al
-    mov byte [desc_codeb + 7], ah
-
-
-
-
-    ;fill desc_codec baseaddr 
-    xor eax, eax   
-    mov ax, cs
-    shl eax, 4
-    add eax, _codec_start
-    mov word [desc_codec+ 2], ax
-    shr eax, 16
-    mov byte [desc_codec + 4], al
-    mov byte [desc_codec + 7], ah
-
-
-
-
-
-
-    ;fill ldt_desc_codea baseaddr 
-    xor eax, eax
-    mov ax, cs
-    shl eax, 4
-    add eax, _codea_start
-    mov word [ldt_desc_codea + 2], ax
-    shr eax, 16
-    mov byte [ldt_desc_codea + 4], al
-    mov byte [ldt_desc_codea + 7], ah
-
-
-    ;fill desc_ldt baseaddr 
-    xor eax, eax
-    mov ax, cs
-    shl eax, 4
-    add eax, ldt_desc_codea
-    mov word [desc_ldt + 2], ax
-    shr eax, 16
-    mov byte [desc_ldt + 4], al
-    mov byte [desc_ldt + 7], ah
-
+    mov byte [desc_data + 4], al
+    mov byte [desc_data + 7], ah
 
 
     ;load gdt
@@ -340,7 +231,7 @@ _code16_start:
     mov ss, ax
 
     mov eax, cr0
-    mov al, 11111110b
+    and eax, 7ffffffeh; PG=0;PE=0
     mov cr0, eax
 
 WAIT_FILL:
@@ -354,58 +245,126 @@ _code32_start:
     mov ax, SELECTOR_DISPLAY
     mov gs, ax
 
-    ;没用ss sp时, 后面用了call, 没出问题好奇怪
-	mov	ax, SELECTOR_STACK
+    mov ax, SELECTOR_DATA
+    mov ds, ax
+    mov es, ax
+    
+	mov	ax, SELECTOR_STACK ;没用ss sp时, 后面用了call, 没出问题好奇怪
 	mov	ss, ax				
     mov	esp,STACK_TOP 
 
-	mov	edi, (80 * 11 + 79) * 2	; 屏幕第 11 行, 第 79 列。
-	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
-	mov	al, 'P'
-	mov	[gs:edi], ax
 
-    mov ax, SELECTOR_TSS
-    ltr ax
+	push	szPMMessage
+    call    DispStr
+    add esp, 4
 
-    push SELECTOR_STACK3
-    push STACK3_TOP
-    push SELECTOR_CODEC ;作为cs保持到栈，cs代表的是调用者的dpl, 请求调用门时的rpl添加到哪里？？
-    push 0
-    retf
 
-    ;call SELECTOR_CALLGATE:0    ;跳入调用门 ;请求调用门时的rpl添加this吗?
+	push	szMemChkTitle
+	call	DispStr
+	add	esp, 4
 
-	; Load LDT
-	mov	ax, SELECTOR_LDT 
-	lldt	ax
-    jmp  LDT_SELECTOR_CODEA:0    ;跳入局部任务
+	call	_disp_mem_size    
 
-	;jmp	SELECTOR_16CODE:0   ;使用jmp来恢复cs的高速缓冲区
+    call    _setup_paging
+
+    ;jmp $
+	jmp	SELECTOR_16CODE:0   ;使用jmp来恢复cs的高速缓冲区
+
+
+
+
+
+_disp_mem_size:
+	push	esi
+	push	edi
+	push	ecx
+
+	mov	esi, MemChkBuf
+	mov	ecx, [dwMCRNumber];for(int i=0;i<[MCRNumber];i++)//每次得到一个ARDS
+.loop:				    ;{
+	mov	edx, 5		  ;  for(int j=0;j<5;j++) //每次得到一个ARDS中的成员
+	mov	edi, ARDStruct	  ;  {//依次显示BaseAddrLow,BaseAddrHigh,LengthLow,
+.1:				  ;             LengthHigh,Type
+	push	dword [esi]	  ;
+	call	DispInt		  ;    DispInt(MemChkBuf[j*4]); //显示一个成员
+	pop	eax		  ;
+	stosd			  ;    ARDStruct[j*4] = MemChkBuf[j*4];
+	add	esi, 4		  ;
+	dec	edx		  ;
+	cmp	edx, 0		  ;
+	jnz	.1		  ;  }
+	call	DispReturn	  ;  printf("\n");
+	cmp	dword [dwType], 1 ;  if(Type == AddressRangeMemory)
+	jne	.2		  ;  {
+	mov	eax, [dwBaseAddrLow];
+	add	eax, [dwLengthLow];
+	cmp	eax, [dwMemSize]  ;    if(BaseAddrLow + LengthLow > MemSize)
+	jb	.2		  ;
+	mov	[dwMemSize], eax  ;    MemSize = BaseAddrLow + LengthLow;
+.2:				  ;  }
+	loop	.loop		  ;}
+				  ;
+	call	DispReturn	  ;printf("\n");
+	push	szRAMSize	  ;
+	call	DispStr		  ;printf("RAM size:");
+	add	esp, 4		  ;
+				  ;
+	push	dword [dwMemSize] ;
+	call	DispInt		  ;DispInt(MemSize);
+	add	esp, 4		  ;
+
+	call	DispReturn	  ;printf("\n");
+
+	pop	ecx
+	pop	edi
+	pop	esi
+	ret
+
+
 
 
 _setup_paging:
+	xor	edx, edx
+	mov	eax, [dwMemSize]
+	mov	ebx, 400000h	; 400000h = 4M = 4096 * 1024, 一个页表对应的内存大小
+    add eax, ebx
+    add eax, -1
+	div	ebx
+	mov	ecx, eax	; 此时 ecx 为页表的个数，也即 PDE 应该的个数
+    push sPGE 
+    call DispStr
+    add esp, 4
+	push ecx		; 暂存页表个数, call后不要pop了
+	call DispInt
+
+    ;init PGE
     mov ax, SELECTOR_PAGEDIR 
     mov es, ax
-    mov ecx, 1024; 1k个pde，每个pd指向一个4k大小的页表pte
     xor eax, eax
     xor edi, edi
     mov eax, PageTblBase | PG_P | PG_USU | PG_RWW
-.1:
-    stosd
+.1: stosd
     add eax, 4096
     loop .1
 
+
+    ;init PTE
     mov ax, SELECTOR_PAGETBL
     mov es, ax
-    mov ecx, 1024 * 1024 ; 1024个页表，每个页表1024项，简化连续处理; 共1M个页表项
+    ;mov ecx, 1024 * 1024 ; 1024个页表，每个页表1024项，简化连续处理; 共1M个页表项
+	pop	eax			; 页表个数
+	mov	ebx, 1024		; 每个页表 1024 个 PTE
+	mul	ebx
+	mov	ecx, eax		; PTE个数 = 页表个数 * 1024
     xor eax, eax
     xor edi, edi
     mov eax, 0 | PG_P | PG_USU | PG_RWW ; 平坦映射
-.2:
-    stosd
+.2: stosd
     add eax, 4096; 每PTE指向一个4k空间（页）的首地址
     loop .2
 
+
+    ;enable  mmu
     mov eax, PageDirBase
     mov cr3, eax
     mov eax, cr0
@@ -416,62 +375,10 @@ _setup_paging:
     nop
     ret
 ;--------- _setup_paging end --------
+
+
+%include "lib.inc"
+
 SEG_CODE32_LEN  equ  $ - _code32_start
 
-
-
-;CODE A为LDT做测试
-[SECTION .codea]
-ALIGN	32
-[BITS	32]
-_codea_start:
-    mov ax, SELECTOR_DISPLAY
-    mov gs, ax
-
-	mov	edi, (80 * 12 + 79) * 2	; 屏幕第 12 行, 第 79 列。
-	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
-	mov	al, 'a'
-	mov	[gs:edi], ax
-	jmp	SELECTOR_16CODE:0   ;使用jmp来恢复cs的高速缓冲区
-
-CODEA_LEN  equ	$ - _codea_start
-
-
-;CODE B为调用门做测试
-[SECTION .codeb]
-ALIGN	32
-[BITS 32]
-_codeb_start:
-    mov ax, SELECTOR_DISPLAY
-    mov gs, ax
-
-	mov	edi, (80 * 13 + 79) * 2	; 屏幕第 13 行, 第 79 列。
-	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
-	mov	al, 'b'
-	mov	[gs:edi], ax
-
-	jmp	SELECTOR_16CODE:0   ;直接跳回实模式
-
-    ;retf
-CODEB_LEN   equ $ - _codeb_start
-   
-
-
-;CODE C为ring变换做测试
-[SECTION .codec]
-ALIGN	32
-[BITS 32]
-_codec_start:
-    mov ax, SELECTOR_DISPLAY
-    mov gs, ax
-
-	mov	edi, (80 * 14 + 79) * 2	; 屏幕第 14 行, 第 79 列。
-	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
-	mov	al, 'c'
-    mov	[gs:edi], ax
-
-    call SELECTOR_CALLGATE:0
-
-    jmp $
-CODEC_LEN   equ $ - _codec_start
-   
+  

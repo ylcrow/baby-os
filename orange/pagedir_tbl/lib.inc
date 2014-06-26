@@ -111,3 +111,12 @@ DispStr:
 	ret
 ;; DispStr 结束
 
+;; 换行
+DispReturn:
+    push	szReturn
+	call	DispStr			;printf("\n");
+	add	esp, 4 
+
+	ret
+;; DispReturn 结束
+
