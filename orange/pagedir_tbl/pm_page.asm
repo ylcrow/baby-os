@@ -328,7 +328,7 @@ _setup_paging:
 	mov	eax, [dwMemSize]
 	mov	ebx, 400000h	; 400000h = 4M = 4096 * 1024, 一个页表对应的内存大小
     add eax, ebx
-    add eax, -1
+    add eax, -1     ;(a + b - 1)/b
 	div	ebx
 	mov	ecx, eax	; 此时 ecx 为页表的个数，也即 PDE 应该的个数
     push sPGE 
