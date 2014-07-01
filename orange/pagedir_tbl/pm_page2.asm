@@ -9,7 +9,9 @@ PageDirBase2		equ	210000h	; 页目录开始地址:	2M + 64K
 PageTblBase2		equ	211000h	; 页表开始地址:		2M + 64K + 4K
 
 FUNC_ADDR       equ	00401000h
-FUNC_FOO		equ	00401000h
+;FUNC_FOO		equ	00401000h
+
+FUNC_FOO		equ	00301000h
 FUNC_BAR        equ	00501000h
 
 [SECTION .gdt]
@@ -17,7 +19,7 @@ FUNC_BAR        equ	00501000h
 desc_null:          Descriptor 0,               0,                      0            ;null指针，用于填充ldtr  
 desc_normal:        Descriptor 0,               0ffffh,                 DA_DRW ;64k         
 desc_16code:        Descriptor 0,               0ffffh,                 DA_C            
-desc_32code:        Descriptor 0,               SEG_CODE32_LEN - 1,     DA_C + DA_32    
+desc_32code:        Descriptor 0,               SEG_CODE32_LEN - 1,     DA_CR + DA_32   ; 一定要可读，等下会cpy代码到flat rw区 
 desc_display:       Descriptor 0B8000h,         0ffffh,                 DA_DRW + DA_DPL3         
 desc_data:          Descriptor 0,               DATA_LEN - 1,           DA_DRW
 desc_stack:         Descriptor 0,               STACK_LEN - 1,          DA_DRWA + DA_32
@@ -261,6 +263,7 @@ _code32_start:
 	mov	ss, ax				
     mov	esp,STACK_TOP 
 
+
 	push	szPMMessage
     call    DispStr
     add esp, 4
@@ -269,9 +272,9 @@ _code32_start:
 	call	DispStr
 	add	esp, 4
 
-    call    _cpy_func
-
 	call	_disp_mem_size    
+
+    call    _copy_func
 
     call    _setup_paging
 
@@ -281,10 +284,24 @@ _code32_start:
     call    _change_process2
     call    SELECTOR_FLAT_C:FUNC_ADDR
 
+
     ;jmp $
 	jmp	SELECTOR_16CODE:0   ;使用jmp来恢复cs的高速缓冲区
 
 
+
+
+bar:
+OffsetBar		equ	bar - $$
+	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
+	mov	al, 'B'
+	mov	[gs:((80 * 20 + 0) * 2)], ax	; 屏幕第 18 行, 第 0 列。
+	mov	al, 'a'
+	mov	[gs:((80 * 20 + 1) * 2)], ax	; 屏幕第 18 行, 第 1 列。
+	mov	al, 'r'
+	mov	[gs:((80 * 20 + 2) * 2)], ax	; 屏幕第 18 行, 第 2 列。
+	retf
+LenBar			equ	$ - bar
 
 
 
@@ -292,33 +309,20 @@ foo:
 OffsetFoo		equ	foo - $$
 	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
 	mov	al, 'F'
-	mov	[gs:((80 * 17 + 0) * 2)], ax	; 屏幕第 17 行, 第 0 列。
+	mov	[gs:((80 * 19 + 0) * 2)], ax	; 屏幕第 17 行, 第 0 列。
 	mov	al, 'o'
-	mov	[gs:((80 * 17 + 1) * 2)], ax	; 屏幕第 17 行, 第 1 列。
-	mov	[gs:((80 * 17 + 2) * 2)], ax	; 屏幕第 17 行, 第 2 列。
-	ret
+	mov	[gs:((80 * 19 + 1) * 2)], ax	; 屏幕第 17 行, 第 1 列。
+	mov	[gs:((80 * 19 + 2) * 2)], ax	; 屏幕第 17 行, 第 2 列。
+	retf
 LenFoo			equ	$ - foo
 
 
-bar:
-OffsetBar		equ	bar - $$
-	mov	ah, 0Ch			; 0000: 黑底    1100: 红字
-	mov	al, 'B'
-	mov	[gs:((80 * 18 + 0) * 2)], ax	; 屏幕第 18 行, 第 0 列。
-	mov	al, 'a'
-	mov	[gs:((80 * 18 + 1) * 2)], ax	; 屏幕第 18 行, 第 1 列。
-	mov	al, 'r'
-	mov	[gs:((80 * 18 + 2) * 2)], ax	; 屏幕第 18 行, 第 2 列。
-	ret
-LenBar			equ	$ - bar
 
 
 
 
 
-
-
-_cpy_func:
+_copy_func:
    	mov	ax, cs
 	mov	ds, ax
 	mov	ax, SELECTOR_FLAT_RW 
@@ -336,18 +340,12 @@ _cpy_func:
 	call	MemCpy
 	add	esp, 12
 
-	;push	LenPagingDemoAll
-	;push	OffsetPagingDemoProc
-	;push	ProcPagingDemo
-	;call	MemCpy
-	;add	esp, 12
-
 	mov	ax, SELECTOR_DATA
 	mov	ds, ax			; 数据段选择子
 	mov	es, ax
 
     ret
-;_cpy_func end
+;_copy_func end
  
 
 
@@ -400,9 +398,7 @@ _disp_mem_size:
 
 
 
-
 _setup_paging:
-	xor	edx, edx
 	mov	eax, [dwMemSize]
 	mov	ebx, 400000h	; 400000h = 4M = 4096 * 1024, 一个页表对应的内存大小
     add eax, ebx
@@ -418,7 +414,7 @@ _setup_paging:
 	push eax
 	call DispInt 
     add esp, 4
-
+	call DispReturn
 
 
     ;init PGE1
@@ -426,7 +422,7 @@ _setup_paging:
     mov ax, SELECTOR_FLAT_RW
     mov es, ax
     xor eax, eax
-    xor edi, PageDirBase
+    mov edi, PageDirBase
     mov eax, PageTblBase | PG_P | PG_USU | PG_RWW
 .1: stosd
     add eax, 4096
@@ -434,14 +430,12 @@ _setup_paging:
 
 
     ;init PTE1
-    mov ax, SELECTOR_FLAT_RW
-    mov es, ax
     mov eax, [PAGETBL_CNT]
 	mov	ebx, 1024		; 每个页表 1024 个 PTE
 	mul	ebx
 	mov	ecx, eax		; PTE个数 = 页表个数 * 1024
     xor eax, eax
-    xor edi, PageTblBase
+    mov edi, PageTblBase
     mov eax, 0 | PG_P | PG_USU | PG_RWW ; 平坦映射
 .2: stosd
     add eax, 4096; 每PTE指向一个4k空间（页）的首地址
@@ -468,7 +462,7 @@ _setup_paging:
     mov ax, SELECTOR_FLAT_RW
     mov es, ax
     xor eax, eax
-    xor edi, PageDirBase2
+    mov edi, PageDirBase2
     mov eax, PageTblBase2 | PG_P | PG_USU | PG_RWW
 .3: stosd
     add eax, 4096
@@ -483,7 +477,7 @@ _setup_paging:
 	mul	ebx
 	mov	ecx, eax		; PTE个数 = 页表个数 * 1024
     xor eax, eax
-    xor edi, PageTblBase2
+    mov edi, PageTblBase2
     mov eax, 0 | PG_P | PG_USU | PG_RWW ; 平坦映射
 .4: stosd
     add eax, 4096; 每PTE指向一个4k空间（页）的首地址
@@ -504,6 +498,7 @@ _setup_paging:
 	add	eax, ecx
 	add	eax, PageTblBase2; 一个地址占4个空间所以地址都是上移2位的
 	mov	dword [es:eax], FUNC_FOO | PG_P | PG_USU | PG_RWW
+
     ret
 ;--------- _setup_paging end --------
 
@@ -514,8 +509,8 @@ _change_process1:
     mov eax, cr0
     or eax, 80000000h
     mov cr0, eax
-    jmp short .test
-.test:
+    jmp short .3
+.3:
     nop
     ret
 
@@ -526,8 +521,8 @@ _change_process2:
     mov eax, cr0
     or eax, 80000000h
     mov cr0, eax
-    jmp short .test
-.test:
+    jmp short .3
+.3:
     nop
     ret
 

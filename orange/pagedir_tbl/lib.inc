@@ -75,6 +75,7 @@ DispStr:
 	push	ebx
 	push	esi
 	push	edi
+    push    eax
 
 	mov	esi, [ebp + 8]	; pszInfo
 	mov	edi, [dwDispPos]
@@ -104,6 +105,7 @@ DispStr:
 .2:
 	mov	[dwDispPos], edi
 
+    pop eax
 	pop	edi
 	pop	esi
 	pop	ebx
