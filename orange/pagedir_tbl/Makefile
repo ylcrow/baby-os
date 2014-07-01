@@ -2,7 +2,7 @@
 # Makefile 
 ##################################################
 
-SRC := pm_flat_page.asm
+SRC := pm_page2.asm
 BIN_DOS := $(SRC:%.asm=%.com)
 BIN_BIOS := $(SRC:%.asm=%.bin)
 
