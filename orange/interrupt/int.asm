@@ -208,15 +208,6 @@ REAL_MODE_ENTRY:
 	lidt	[_SavedIDTR]	
 
 
-    ; 恢复中断屏蔽寄存器(IMREG)的原值
-	mov	al, [_SavedIMREG]	
-	out	21h, al
-    nop
-    nop
-    nop
-    nop
-
-
     ;open a20
     in al, 92h
     and al, 11111110b
@@ -284,8 +275,8 @@ _code32_start:
 	;sti
     ;jmp $
 
+    ;会有警告，但是强制执行也没问题样？
 	call	SetRealmode8259A
-
 
     ;printf out pm mode
 	push	S_OUT_PM_MSG
@@ -343,8 +334,8 @@ Init8259A:
 
 
 SetRealmode8259A:
-	;mov	ax, SelectorData
-	;mov	fs, ax
+	mov	ax, SELECTOR_DATA 
+	mov	fs, ax
 
 	mov	al, 017h
 	out	020h, al	; 主8259, ICW1.
@@ -358,9 +349,9 @@ SetRealmode8259A:
 	out	021h, al	; 主8259, ICW4.
 	call	io_delay
 
-	;mov	al, [fs:SavedIMREG]	; ┓恢复中断屏蔽寄存器(IMREG)的原值
-	;out	021h, al		; ┛
-	;call	io_delay
+	mov	al, [fs:SavedIMREG]	; ┓恢复中断屏蔽寄存器(IMREG)的原值
+	out	021h, al		; ┛
+	call	io_delay
 
 	ret
 
