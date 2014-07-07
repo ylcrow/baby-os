@@ -4,13 +4,15 @@
     nop
     
     %include "fat12_hdr.inc" 
+    %include "def_addr.inc"
 
-IMG_BASE        equ	09000h	; image 被加载到的段地址
-IMG_OFFSET      equ	0100h	; image 被加载到的偏移地址
-TOP_STACK       equ	07c00h
 
+IMG_BASE        equ	LOADERIMG_VIRT_BASE_ADDR      	; image 被加载到的段地址
+IMG_OFFSET      equ	LOADERIMG_OFFSET                ; image 被加载到的偏移地址
 image_name      db	"LOADER  BIN"	    ; 需要加载的img名
 IMG_NAME_LEN    equ  $ - image_name     ; fat12: max 13 bytes(8文件名 + 3后缀名 + 2space)
+
+TOP_STACK       equ	07c00h
 
 
 boot_start:	
