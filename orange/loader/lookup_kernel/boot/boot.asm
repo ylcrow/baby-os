@@ -1,5 +1,5 @@
-    %include "def_addr.inc"
-    org  BOOTIMG_OFFSET  
+%include "def_addr.inc"
+org  BOOTIMG_OFFSET  
     
     jmp short boot_start
     nop
