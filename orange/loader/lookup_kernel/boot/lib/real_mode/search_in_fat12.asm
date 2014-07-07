@@ -138,6 +138,11 @@ LABEL_FILE_LOADED:
     mov cx, LAD_STRLEN
 	call	_print_str			; 显示字符串
 
+    ;KillMotor
+	mov	dx, 03F2h
+	mov	al, 0
+	out	dx, al
+
     ret;
 
 

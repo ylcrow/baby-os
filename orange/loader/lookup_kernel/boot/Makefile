@@ -9,7 +9,7 @@ LDR_BIN:=$(subst .asm,.bin,$(LDR))
 
 IMG:=a.img
 FLOPPY:=/mnt/floppy/
-ASMKFLAGS := -I include/
+ASMKFLAGS := -I include/ -I lib/real_mode/ -I lib/protect_mode/
 
 .PHONY : everything
 
