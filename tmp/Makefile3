@@ -1,0 +1,99 @@
+srcdir=$(shell pwd)
+
+#CROSS_COMPILE   = /opt/buildroot-mipsel-iplus/bin/mipsel-linux-uclibc-
+AS      = $(CROSS_COMPILE)as
+LD      = $(CROSS_COMPILE)ld
+CC      = $(CROSS_COMPILE)gcc
+CPP     = $(CC) -E
+AR      = $(CROSS_COMPILE)ar
+NM      = $(CROSS_COMPILE)nm
+STRIP   = $(CROSS_COMPILE)strip
+OBJCOPY = $(CROSS_COMPILE)objcopy
+OBJDUMP = $(CROSS_COMPILE)objdump
+RANLIB  = $(CROSS_COMPILE)ranlib
+MKDIR	= mkdir -p
+
+LDFLAGS := -lrt
+DIR_OBJS := .objs
+DIR_DEPS := .deps
+
+EXEC_SER := vty_server
+SRCS_SER := remote_vty_com.c  remote_vty_ser.c
+OBJS_SER := $(addprefix $(DIR_OBJS)/, $(SRCS_SER:%.c=%.o))
+
+
+EXEC_CLI := vty_client
+SRCS_CLI := remote_vty_com.c  remote_vty_cli.c
+OBJS_CLI := $(addprefix $(DIR_OBJS)/, $(SRCS_CLI:%.c=%.o))
+
+
+DEPS	:= $(addprefix $(DIR_DEPS)/,$(patsubst %.c, %.d, $(SRCS_SER) $(SRCS_CLI)))
+
+BIN := $(EXEC_CLI)
+
+
+all: $(EXEC_SER) $(EXEC_CLI)
+
+
+$(DIR_OBJS)/%.o : %.c
+	@echo -e "  CC\t$(notdir $@)"
+	@$(MKDIR) $(DIR_OBJS)
+	@$(CC) -c $(CFLAGS) $(filter %.c, $^) -o $@
+
+
+$(DIR_DEPS)/%.d : %.c
+	@echo -e "  DEP\t$(notdir $@)"
+	@set -e; \
+	$(MKDIR) $(DIR_DEPS); \
+	$(CC) -E -MM $(CFLAGS) $(filter %.c, $^) >$@.tmp;\
+	sed 's,\(.*\)\.o[ :]*,$(DIR_OBJS)/\1.o $@ : ,g' < $@.tmp >$@;\
+	rm -rf $@.tmp
+
+$(EXEC_SER): $(OBJS_SER) 
+	@echo -e "  LD\t$@"
+	@$(CC) $(OBJS_SER)  $(LDFLAGS) -o $@
+	@cp -pf  $@  $@.unstrip
+	@$(STRIP) $@ 
+
+
+$(EXEC_CLI): $(OBJS_CLI) 
+	@echo -e "  LD\t$@"
+	@$(CC)  $(OBJS_CLI) $(LDFLAGS) -o $@
+	@cp -pf  $@  $@.unstrip
+	@$(STRIP) $@
+
+
+romfs:
+	if test -e $(srcdir)/$(BIN);\
+then echo "Compile $(BIN) success";\
+else echo "Compile $(BIN) error!";exit 1;\
+fi;
+	@cp -arpdf $(srcdir)/$(BIN) $(ROMFSDIR)/bin/
+
+
+
+install:
+	if test -e $(srcdir)/$(BIN);\
+then echo "compile $(BIN) success";\
+else echo "compile $(BIN) error!";exit 1;\
+fi;
+	cp -arpdf $(BIN) $(FILESYSTEM_DIR)/bin/$(BIN)
+
+
+
+
+
+
+
+
+
+.PHONY: clean
+clean: 	
+	#rm -rf $(DIR_DEPS)
+	rm -rf $(DIR_OBJS)
+	rm -rf *.a *.so $(EXEC_SER) $(EXEC_CLI) $(EXEC_SER).unstrip  $(EXEC_CLI).unstrip *~
+
+
+-include $(DEPS)
+
+

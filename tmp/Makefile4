@@ -1,0 +1,1177 @@
+############################################################
+#
+#  Makefile for D701 Main.
+#
+############################################################
+
+#Cross Compile Setup
+export PATH :=/opt/trendchip/mips-linux-3.4.6/bin:$(PATH)
+export HOST=mips-linux-
+export CROSS=mips-linux-
+export CROSS_COMPILE=$(CROSS)
+export CC=$(CROSS)gcc
+export LD=$(CROSS)ld
+export AR=$(CROSS)ar
+export STRIP=$(CROSS)strip
+export CROSS_COMPILE=$(CROSS)
+TC3162_CFLAG=$(space)-mips1 -msoft-float
+
+#custom and profile
+CUSTOM=RT
+PROFILE=tc3162u
+
+SUDO=sudo
+
+IMAGEDIR = images
+ifneq ($(strip $(HW)),)
+IMAGEDIR = images/$(HW)
+endif
+ifneq ($(strip $(OEM)),)
+IMAGEDIR = images/$(OEM)
+endif
+ifneq ($(strip $(HW)),)
+ifneq ($(strip $(OEM)),)
+IMAGEDIR = images/$(HW)_$(OEM)
+endif
+endif
+
+
+
+include Project/profile/$(CUSTOM)/$(PROFILE)/$(PROFILE).profile
+include Project/dir.mak
+include Project/rule.mak
+
+
+ifeq ($(TCSUPPORT_SYSNAME_IPLUS007),y)
+export SYS_NAME=IPLUS007
+export SYS_SUBTYPE=IPLUS007
+subtype=
+endif
+ifeq ($(TCSUPPORT_SYSNAME_IPLUS007E),y)
+export SYS_NAME=IPLUS007
+export SYS_SUBTYPE=IPLUS007E
+subtype=iplus007e
+endif
+
+ifneq ($(SYSLANG),)
+export SYS_LANG=_$(SYSLANG)
+export SYS_LANG_=$(SYSLANG)_
+else
+export SYS_LANG=
+export SYS_LANG_=
+endif
+
+ifneq ($(OEM),)
+export SYS_OEM=$(OEM)
+export SYS_OEM_=P$(OEM)_
+else
+export SYS_OEM=
+export SYS_OEM_=
+endif
+
+ifneq ($(HW),)
+export SYS_HW=$(HW)
+export SYS_HW_=H$(HW)_
+else
+export SYS_HW=
+export SYS_HW_=
+endif
+
+export UPGRADE_FILE_DIR=$(TRUNK_DIR)/tmpfilesys/upgrade
+export UPGRADE_BIN_DIR=$(TRUNK_DIR)/tmpfilesys/007bin
+export VERSION_FILE=$(TRUNK_DIR)/apps/private/mu/mu_version.h
+
+ifneq ($(SYSVER),)
+export VERSION=$(SYSVER)
+export SYS_VER=$(SYSVER)
+else
+export VERSION=$(shell $(TRUNK_DIR)/Project/get_ver.sh $(VERSION_FILE))
+endif
+
+COMMON_SDKDIR = $(TRUNK_DIR)/../common_SDK
+src_svnver=$(shell svn info | awk '/^Last Changed Rev:/'|cut -d " " -f 4)
+common_sdk_svn=$(shell svn info $(COMMON_SDK_DIR) | awk '/^Last Changed Rev:/'|cut -d " " -f 4)
+svnver=$(shell ( test $(src_svnver) -lt $(common_sdk_svn) && echo $(common_sdk_svn) ) || echo $(src_svnver))
+export UPGRADE_BIN=$(SYS_SUBTYPE)_UPGRADE_$(SYS_OEM_)$(SYS_HW_)$(SYS_LANG_)V$(VERSION).$(svnver).bin
+export UBOOT_BIN=$(SYS_SUBTYPE)_UBOOT_$(SYS_OEM_)$(SYS_HW_)$(SYS_LANG_)V$(VERSION).$(svnver).bin
+export SYSTEM_BIN=$(SYS_SUBTYPE)_FIRMWARE_$(SYS_OEM_)$(SYS_HW_)$(SYS_LANG_)V$(VERSION).$(svnver).bin
+export FLASHALL_BIN=$(SYS_SUBTYPE)_FLASHALL_$(SYS_OEM_)$(SYS_HW_)$(SYS_LANG_)V$(VERSION).$(svnver).bin
+export MD5FILE=$(SYS_SUBTYPE)_MD5FILE_$(SYS_OEM_)$(SYS_HW_)$(SYS_LANG_)V$(VERSION).$(svnver).txt
+export SVNVER=$(svnver)
+
+All: clean_fs bootbase ai_data kernel modules apps buildimage upgrade md5file
+
+clean: bootbase_clean kernel_clean modules_clean apps_clean ai_data_clean
+	rm -rf $(PROJECT_DIR)/images/*
+
+#modules
+modules:drivers kernel
+
+modules_clean:drivers_clean
+
+
+
+#test framework
+ifeq ($(DS_TEST_FRAMEWORK), y)
+export DS_TEST_FRAMEWORK=y
+DS_TEST=ds_test
+DS_TEST_CLEAN=ds_test_clean
+else
+DS_TEST=
+DS_TEST_CLEAN=
+endif
+
+
+
+
+#Build ai_data
+#ai_data could copy some file to kernel and mu
+ai_data:
+	echo "Build ai_data"
+	$(MAKE) -C $(APP_AI_DATA_DIR)
+	
+	if test -e $(APP_AI_DATA_DIR)/app.dat ;\
+	then echo "Compile ai_data success";\
+	else echo "Compile ai_data error!";exit 1;\
+	fi
+	
+	cp $(APP_AI_DATA_DIR)/app.dat  $(FILESYSTEM_DIR)/usr/etc/
+
+ai_data_clean:
+	echo "clean ai_data"
+	-$(MAKE) -C $(APP_AI_DATA_DIR) clean
+
+
+#apps
+apps: libiconv busybox brctl ethcmd vconfig pppd wlan wirelesstool mtd tc gnet ai_kernel\
+		iptables br2684ctl libatm tcci  mu dnsmasq atmcmd common_www usb_camera \
+		watchdog miniupnpc
+
+
+apps_clean:  brctl_clean ethcmd_clean vconfig_clean pppd_clean wlan_clean \
+		wirelesstool_clean mtd_clean tc_clean  iptables_clean \
+		br2684ctl_clean libatm_clean tcci_clean   mu_clean \
+		dnsmasq_clean gnet_clean ai_kernel_clean atmcmd_clean usb_camera_clean libiconv_clean \
+		watchdog_clean miniupnpc_clean
+
+
+
+menuconfig:
+	echo "Project menuconfig"
+	cp $(PROFILE_DIR)/$(PROFILE).profile  $(PROJECT_MENUCONFIG_DIR)/.config		
+	
+	echo "#Custom menuconfig" > $(PROJECT_MENUCONFIG_DIR)/CustomConfig;
+	if test -e $(PROJECT_MENUCONFIG_DIR)/$(CUSTOM).config; \
+	then \
+		cat $(PROJECT_MENUCONFIG_DIR)/$(CUSTOM).config > $(PROJECT_MENUCONFIG_DIR)/CustomConfig; \
+	fi
+
+	$(MAKE) -C $(PROJECT_MENUCONFIG_DIR) menuconfig
+	cp $(PROJECT_MENUCONFIG_DIR)/.config $(PROFILE_DIR)/$(PROFILE).profile	
+	
+clean_fs:
+	$(SUDO) chmod -R 777 $(PROJECT_DIR)
+	$(SUDO) chmod -R 777 $(KERNEL_DIR)
+	$(SUDO) chmod -R 777 $(APP_DIR)
+	$(SUDO) chmod -R 777 $(MODULE_DIR)
+	$(SUDO) chmod -R 777 $(TOOLS_DIR)
+	$(SUDO) chmod -R 777 $(BOOTROM_DIR)
+
+	$(SUDO) rm -rf $(PROJECT_DIR)/$(IMAGEDIR)/*
+	$(SUDO) rm -rf $(FILESYSTEM_DIR)/lib/*
+	$(SUDO) rm -rf $(FILESYSTEM_DIR)/bin/*
+	$(SUDO) rm -rf $(FILESYSTEM_DIR)/userfs/bin/*
+#	$(SUDO)	rm -rf $(FILESYSTEM_DIR)/usr/bin/*
+	$(SUDO)	rm -rf $(FILESYSTEM_DIR)/sbin/*
+
+	$(SUDO) mkdir -p $(PROJECT_DIR)/$(IMAGEDIR)
+	$(SUDO)	mkdir $(FILESYSTEM_DIR)/lib/modules
+	find $(FILESYSTEM_DIR) -name "dummpy.file" | xargs rm -f
+
+
+#  build bootbase.
+bootbase:
+	echo "Build bootrom"
+
+	if test -e $(PROFILE_DIR)/mi.conf; \
+	then \
+		cp $(PROFILE_DIR)/mi.conf $(BOOTROM_DIR)/mi.conf; \
+	fi
+
+# Support Bootloader Compression, frankliao added 20100803
+ifneq ($(strip $(TCSUPPORT_BOOT_LZMA)),)
+	$(MAKE) -C $(BOOTROM_DIR) bootlzma
+else
+	$(MAKE) -C $(BOOTROM_DIR) bootload
+endif
+	if test -e $(BOOTROM_DIR)/tcboot.bin; \
+	then \
+		echo "Compile bootbase success"; \
+	else \
+		echo "Compile bootbase error!"; exit 1; \
+	fi	
+	cp $(BOOTROM_DIR)/tcboot.bin $(APP_PRIVATE_DIR)/tclinux_builder
+	cp $(BOOTROM_DIR)/byteswap $(APP_PRIVATE_DIR)/tclinux_builder
+	cp $(BOOTROM_DIR)/tcboot.bin $(PROJECT_DIR)/$(IMAGEDIR)/$(UBOOT_BIN)
+#	cp $(BOOTROM_DIR)/byteswap $(PROJECT_DIR)/$(IMAGEDIR)
+
+# bootbase clean	
+bootbase_clean:
+	echo "Clean bootrom"
+	$(MAKE) -C $(BOOTROM_DIR) clean
+
+#  build kernel.
+kernel: 
+	@echo "build kernel"
+	
+	cp $(KERNEL_DIR)/tc3162u_config $(KERNEL_DIR)/.config;
+	#copy if user make menuconfig
+	if test -e $(PROFILE_DIR)/kernel$(subtype).config; \
+	then \
+		cp $(PROFILE_DIR)/kernel$(subtype).config $(KERNEL_DIR)/.config; \
+	fi
+	#copy mow kernel config as kernel_config to support release BSP
+	rm -f $(KERNEL_DIR)/kernel_config
+	cp $(KERNEL_DIR)/.config $(KERNEL_DIR)/kernel_config
+	
+	$(MAKE) -C $(KERNEL_DIR) 
+	$(MAKE) -C $(KERNEL_DIR) linux.7z
+	$(MAKE) -C $(KERNEL_DIR) modules
+
+	#copy kernel module to romfile
+	#1. add for netfilter limit function
+	cp -arpdf $(KERNEL_DIR)/net/netfilter/xt_limit.ko $(FILESYSTEM_DIR)/lib/modules/
+	
+	
+	if test -e $(KERNEL_DIR)/linux.7z; \
+	then \
+		echo "Compile kernel success"; \
+	else \
+		echo "Compile kernel error!"; exit 1; \
+	fi	
+	cp $(KERNEL_DIR)/linux.7z $(APP_PRIVATE_DIR)/tclinux_builder
+
+#kernel menuconfig
+kernel_menuconfig:
+	echo "kernel menuconfig"
+	echo "build kernel menuconfig"
+	
+	cp $(KERNEL_DIR)/tc3162u_config $(KERNEL_DIR)/.config;
+	#copy if user make menuconfig
+	if test -e $(PROFILE_DIR)/kernel$(subtype).config; \
+	then \
+		cp $(PROFILE_DIR)/kernel$(subtype).config $(KERNEL_DIR)/.config; \
+	fi
+	#copy mow kernel config as kernel_config to support release BSP
+	rm -f $(KERNEL_DIR)/kernel_config
+	cp $(KERNEL_DIR)/.config $(KERNEL_DIR)/kernel_config
+
+	$(MAKE) -C $(KERNEL_DIR) menuconfig
+	cp $(KERNEL_DIR)/.config  $(PROFILE_DIR)/kernel$(subtype).config	
+
+kernel_clean:
+	echo "build kernel"
+	$(SUDO) $(MAKE) -C $(KERNEL_DIR) clean
+	
+
+#Build busybox-1.00
+busybox:
+	echo "Building Busybox-1.00"
+	
+	cp $(APP_BUSYBOX_DIR)/3162u_config $(APP_BUSYBOX_DIR)/.config;
+	#copy if user make menuconfig
+	if test -e $(PROFILE_DIR)/busybox.config; \
+	then \
+		cp $(PROFILE_DIR)/busybox.config $(APP_BUSYBOX_DIR)/.config; \
+	fi
+
+	#copy mow kernel config as busybox_config to support release BSP
+	rm -f $(APP_BUSYBOX_DIR)/busybox_config
+	cp $(APP_BUSYBOX_DIR)/.config $(APP_BUSYBOX_DIR)/busybox_config
+	
+	$(MAKE) -C $(APP_BUSYBOX_DIR)
+	if test -e $(APP_BUSYBOX_DIR)/busybox; \
+	then \
+		echo "Compile BusyBox success"; \
+	else \
+		echo "Compile BusyBox error!"; exit 1; \
+	fi
+	$(MAKE) -C $(APP_BUSYBOX_DIR) install
+	cp ${APP_BUSYBOX_DIR}/default.script ${FILESYSTEM_DIR}/usr/etc 
+
+busybox_menuconfig:
+	echo "busybox menuconfig"
+	echo "Building Busybox menuconfig"
+	
+	cp $(APP_BUSYBOX_DIR)/3162u_config $(APP_BUSYBOX_DIR)/.config;
+	#copy if user make menuconfig
+	if test -e $(PROFILE_DIR)/busybox.config; \
+	then \
+		cp $(PROFILE_DIR)/busybox.config $(APP_BUSYBOX_DIR)/.config; \
+	fi
+
+	#copy mow kernel config as busybox_config to support release BSP
+	rm -f $(APP_BUSYBOX_DIR)/busybox_config
+	cp $(APP_BUSYBOX_DIR)/.config $(APP_BUSYBOX_DIR)/busybox_config
+
+	$(MAKE) -C $(APP_BUSYBOX_DIR) menuconfig
+	cp $(APP_BUSYBOX_DIR)/.config  $(PROFILE_DIR)/busybox.config
+	
+busybox_clean:
+	echo "Clean Busybox-1.00"
+	$(MAKE) -C $(APP_BUSYBOX_DIR) clean
+
+tcci:
+	echo "Build tcci"
+	$(MAKE) -C $(APP_TCCI_DIR)
+	if test -e $(APP_TCCI_DIR)/tcci; \
+	then echo "Compile tcci success"; \
+	else echo "Compile tcci error!"; exit 1; \
+	fi
+	cp $(APP_TCCI_DIR)/tcci  $(FILESYSTEM_DIR)/usr/bin/
+	rm -f $(FILESYSTEM_DIR)/usr/bin/wan
+	ln -s tcci $(FILESYSTEM_DIR)/usr/bin/wan
+	rm -f $(FILESYSTEM_DIR)/usr/bin/sys
+	ln -s tcci $(FILESYSTEM_DIR)/usr/bin/sys
+	rm -f $(FILESYSTEM_DIR)/usr/bin/w
+	ln -s tcci $(FILESYSTEM_DIR)/usr/bin/w
+tcci_clean:
+	$(MAKE) -C $(APP_TCCI_DIR) clean
+
+atmcmd:
+	echo "Build atmcmd"
+	$(MAKE) -C $(APP_CMDCI_DIR)
+	if test -e $(APP_CMDCI_DIR)/atmcmd;\
+	then echo "Compile atmcmd success";\
+	else echo "Compile atmcmd error!" ;exit 1;\
+	fi
+	cp $(APP_CMDCI_DIR)/atmcmd  $(FILESYSTEM_DIR)/usr/bin/
+atmcmd_clean:
+	$(MAKE) -C $(APP_CMDCI_DIR) clean 
+
+
+
+
+
+ifneq ($(strip $(TCSUPPORT_USB_CAMERA)),)
+usb_camera_menuconfig:
+	$(MAKE) -C  $(MODULES_USB_CAMERA_DRIVER) menuconfig
+usb_camera: 
+	$(MAKE) -C $(APP_MJPEG_LIB_DIR)
+	$(STRIP) --strip-unneeded $(APP_MJPEG_LIB_DIR)/.libs/libjpeg.so.62.0.0
+	cp -arpdf $(APP_MJPEG_LIB_DIR)/.libs/libjpeg.so.62.0.0 $(FILESYSTEM_DIR)/lib
+	cp -arpdf $(APP_MJPEG_LIB_DIR)/.libs/libjpeg.so.62 $(FILESYSTEM_DIR)/lib
+	cp -arpdf $(APP_MJPEG_LIB_DIR)/.libs/libjpeg.so $(FILESYSTEM_DIR)/lib
+	
+#	$(MAKE) -C $(APP_USB_MJPEG_STREAM_SERVER_DIR)
+#	$(STRIP) --strip-unneeded $(APP_USB_MJPEG_STREAM_SERVER_DIR)/*.so
+#	$(STRIP) --strip-unneeded $(APP_USB_MJPEG_STREAM_SERVER_DIR)/mjpg_streamer
+#	cp $(APP_USB_MJPEG_STREAM_SERVER_DIR)/mjpg_streamer $(FILESYSTEM_DIR)/userfs/bin/
+#	cp $(APP_USB_MJPEG_STREAM_SERVER_DIR)/output_http.so $(FILESYSTEM_DIR)/lib
+#	cp $(APP_USB_MJPEG_STREAM_SERVER_DIR)/input_uvc.so $(FILESYSTEM_DIR)/lib
+#	cp $(APP_USB_MJPEG_STREAM_SERVER_DIR)/output_udp.so $(FILESYSTEM_DIR)/lib
+#	rm -rf $(FILESYSTEM_DIR)/www/usb_camera
+#	cp -arpdf $(APP_USB_MJPEG_STREAM_SERVER_DIR)/www $(FILESYSTEM_DIR)/www/usb_camera
+usb_camera_clean:
+	$(MAKE) -C $(APP_MJPEG_LIB_DIR) clean
+	$(MAKE) -C $(APP_USB_MJPEG_STREAM_SERVER_DIR) clean
+else
+usb_camera:
+usb_camera_clean:
+endif
+
+
+common_www:
+	$(SUDO) rm -rf $(FILESYSTEM_DIR)/www
+	cp -arpdf $(APP_WWW_DIR)$(SYS_LANG) $(FILESYSTEM_DIR)/www
+	mv $(FILESYSTEM_DIR)/www/svnnum $(FILESYSTEM_DIR)/www/$(svnver)
+	echo "var svnversion=\"$(svnver)\";"  > $(FILESYSTEM_DIR)/www/versiondef.js
+	echo "var deviceInfo=\"$(SYS_SUBTYPE)\";" >> $(FILESYSTEM_DIR)/www/versiondef.js	
+	echo "var subtype_at_run=\"\";" >>$(FILESYSTEM_DIR)/www/versiondef.js	
+	$(COMMON_SDKDIR)/tools/yuicompress.sh $(FILESYSTEM_DIR)/www 
+
+#Build libiconv
+libiconv:
+	$(MAKE) -C $(APP_LIBICONV_DIR)
+	$(STRIP) --strip-unneeded $(APP_LIBICONV_DIR)/lib/.libs/libiconv.so.2.5.0
+	cp -arpdf $(APP_LIBICONV_DIR)/include/iconv.h $(PUBLIC_LIB_DIR)
+	cp -arpdf $(APP_LIBICONV_DIR)/lib/.libs/libiconv.so* $(FILESYSTEM_DIR)/lib
+	cp -arpdf $(APP_LIBICONV_DIR)/lib/.libs/libiconv.so* $(PUBLIC_LIB_DIR)
+libiconv_clean:
+	$(MAKE) -C $(APP_LIBICONV_DIR) clean	
+# Build json-c
+json-c:
+	@echo "Build Json-c Make=" $(MAKE)
+	$(MAKE) -C $(APP_JSONC_DIR)
+	$(MAKE) -C $(APP_JSONC_DIR) install
+
+#Build blueZ
+bluez-lib bluez_lib:
+	$(MAKE) -C $(APP_BLUEZ_LIB_DIR) -f makefile.build
+	cp -arpdf $(APP_BLUEZ_LIB_DIR)/tmp_install/lib/* $(FILESYSTEM_DIR)/lib
+bluez-lib_clean bluez_lib_clean:
+	$(MAKE) -C $(APP_BLUEZ_LIB_DIR) -f makefile.build clean	
+
+bluez-utils bluez_utils: bluez-lib dbus libusb
+	$(MAKE) -C $(APP_BLUEZ_UTILS_DIR) -f makefile.build
+	cp -arpdf $(APP_BLUEZ_UTILS_DIR)/tmp_install/etc/* $(FILESYSTEM_DIR)/usr/etc
+	cp -arpdf $(APP_BLUEZ_UTILS_DIR)/tmp_install/bin/* $(FILESYSTEM_DIR)/bin/
+	cp -arpdf $(APP_BLUEZ_UTILS_DIR)/tmp_install/sbin/* $(FILESYSTEM_DIR)/sbin/
+	cp -arpdf $(APP_BLUEZ_UTILS_DIR)/tmp_install/lib/* $(FILESYSTEM_DIR)/lib/
+
+bluez-utils_clean bluez_utils_clean: bluez-lib_clean dbus_clean libusb_clean
+	$(MAKE) -C $(APP_BLUEZ_UTILS_DIR) -f makefile.build clean	
+
+#Build dbus
+dbus: expat
+	$(MAKE) -C $(APP_DBUS_DIR) -f makefile.build
+	cp -arpdf $(APP_DBUS_DIR)/tmp_install/bin/* $(FILESYSTEM_DIR)/bin/
+	cp -arpdf $(APP_DBUS_DIR)/tmp_install/sbin/* $(FILESYSTEM_DIR)/sbin/
+	cp -arpdf $(APP_DBUS_DIR)/tmp_install/lib/* $(FILESYSTEM_DIR)/lib/
+	cp -arpdf $(APP_DBUS_DIR)/tmp_install/etc/* $(FILESYSTEM_DIR)/usr/etc/
+	ln -sf /bin/busybox $(FILESYSTEM_DIR)/usr/bin/sed
+
+dbus_clean: expat_clean
+	$(MAKE) -C $(APP_DBUS_DIR) -f makefile.build clean	
+
+#Build expat
+expat:
+	$(MAKE) -C $(APP_EXPAT_DIR) -f makefile.build
+	cp -arpdf $(APP_EXPAT_DIR)/tmp_install/lib/* $(FILESYSTEM_DIR)/lib
+expat_clean:
+	$(MAKE) -C $(APP_EXPAT_DIR) -f makefile.build clean	
+
+#Build libusb
+libusb:
+	$(MAKE) -C $(APP_LIBUSB_DIR) -f makefile.build
+	cp -arpdf $(APP_LIBUSB_DIR)/tmp_install/lib/* $(FILESYSTEM_DIR)/lib
+libusb_clean:
+	$(MAKE) -C $(APP_LIBUSB_DIR) -f makefile.build clean	
+
+#Build dnsmasq
+dnsmasq:
+	echo "Build dnsmasq"
+	$(MAKE) -C $(APP_DNSMASQ_DIR)
+	if test -e $(APP_DNSMASQ_DIR)/src/dnsmasq; \
+		then echo "Compile dnsmasq success"; \
+	else echo "Compile dnsmasq error!"; exit 1; \
+	fi
+	cp $(APP_DNSMASQ_DIR)/src/dnsmasq  $(FILESYSTEM_DIR)/bin/
+	$(STRIP) --strip-unneeded  $(FILESYSTEM_DIR)/bin/dnsmasq
+dnsmasq_clean:
+	echo "Clean dnsmasq"
+	$(MAKE) -C $(APP_DNSMASQ_DIR) clean
+
+
+mu: ai_data libiconv usb_camera json-c
+	echo "Build mu"
+	$(MAKE) -C $(APP_MU_DIR)
+	if test -e $(APP_MU_DIR)/tools; \
+	then echo "Compile mu success"; \
+	else echo "Compile mu error!"; exit 1; \
+	fi
+	$(MAKE) -C $(APP_MU_DIR) install
+
+mu_clean:
+	$(MAKE) -C $(APP_MU_DIR) clean
+
+
+miniupnpc:
+	echo "build miniupnpc"
+	$(MAKE) -C $(APP_UPNPC_DIR)
+	$(MAKE) -C $(APP_UPNPC_DIR) install
+
+miniupnpc_clean:
+	echo "clean miniupnpc"
+	$(MAKE) -C $(APP_PUBLIC_DIR)/miniupnpc clean
+	
+
+
+remote_vty:
+	echo "build remote_vty"
+	$(MAKE) -C $(APP_REMOTE_VTY_DIR)
+	$(MAKE) -C $(APP_REMOTE_VTY_DIR) install
+
+remote_vty_clean:
+	echo "clean remote_vty"
+	$(MAKE) -C $(APP_PUBLIC_DIR)/remote_vty clean
+	
+
+
+#
+#  Build modules
+#
+gnet:
+	echo "build gnet kernel modules"
+	$(MAKE) -C $(MODULES_PRIV_SRC_DIR)/gnet
+	$(SUDO) cp $(MODULES_PRIV_SRC_DIR)/gnet/*.ko $(FILESYSTEM_DIR)/lib/modules/	
+gnet_clean:
+	echo "clean gnet kernel modules"
+	$(MAKE) -C $(MODULES_PRIV_SRC_DIR)/gnet clean
+
+ai_kernel:
+	echo "build ai kernel modules"
+	$(MAKE) -C $(MODULES_PRIV_SRC_DIR)/ai_kernel
+	$(SUDO) cp $(MODULES_PRIV_SRC_DIR)/ai_kernel/*.ko $(FILESYSTEM_DIR)/lib/modules/	
+ai_kernel_clean:
+	echo "clean ai kernel modules"
+	$(MAKE) -C $(MODULES_PRIV_SRC_DIR)/ai_kernel clean
+	
+watchdog:
+	echo "build watchdog kernel modules"
+	$(MAKE) -C $(MODULES_PRIV_SRC_DIR)/watchdog
+	$(SUDO) cp $(MODULES_PRIV_SRC_DIR)/watchdog/*.ko $(FILESYSTEM_DIR)/lib/modules/	
+watchdog_clean:
+	echo "clean watchdog kernel modules"
+	$(MAKE) -C $(MODULES_PRIV_SRC_DIR)/watchdog clean
+	
+drivers:
+	echo "build mac tcci led drivers"
+	#Build mac
+#	$(MAKE) -C $(MODULES_PRIV_SRC_DIR)/tc3162l2hp2h clean
+	$(MAKE) -C $(MODULES_PRIV_SRC_DIR)/tc3162l2hp2h
+	
+	#cp mac
+	$(SUDO) cp $(MODULES_PRIV_SRC_DIR)/tc3162l2hp2h/tc3162l2mac.ko $(FILESYSTEM_DIR)/lib/modules/	
+	
+	#cp led
+	$(SUDO) cp $(MODULES_PRIV_SRC_DIR)/tc3162l2hp2h/tcledctrl.ko $(FILESYSTEM_DIR)/lib/modules/
+	
+	#cp autopvc
+	$(SUDO)	cp $(MODULES_PRIV_SRC_DIR)/tc3162l2hp2h/tc3162l2sar.ko $(FILESYSTEM_DIR)/lib/modules/
+
+	#Build tcci
+	$(MAKE) -C $(MODULES_PRIV_SRC_DIR)/tcci
+	$(SUDO) cp $(MODULES_PRIV_SRC_DIR)/tcci/tccicmd.ko $(FILESYSTEM_DIR)/lib/modules/
+	
+#	#cp AI
+#	$(MAKE) -C $(KERNEL_DIR)/drivers/AI 
+#	if test -e $(KERNEL_DIR)/drivers/AI/ai.ko; \
+#	then echo "cp ai module"; \
+#	$(SUDO)	cp -rf $(KERNEL_DIR)/drivers/AI/ai.ko $(FILESYSTEM_DIR)/lib/modules/; \
+#	fi 
+	
+	#usb
+#	rm -rf $(FILESYSTEM_DIR)/lib/modules/usbhost
+#	mkdir $(FILESYSTEM_DIR)/lib/modules/usbhost
+#	cp $(KERNEL_DIR)/drivers/scsi/scsi_mod.ko $(FILESYSTEM_DIR)/lib/modules/usbhost/
+#	cp $(KERNEL_DIR)/drivers/scsi/scsi_wait_scan.ko $(FILESYSTEM_DIR)/lib/modules/usbhost/
+#	cp $(KERNEL_DIR)/drivers/scsi/sd_mod.ko $(FILESYSTEM_DIR)/lib/modules/usbhost/
+#	cp $(KERNEL_DIR)/drivers/usb/core/usbcore.ko $(FILESYSTEM_DIR)/lib/modules/
+	cp $(KERNEL_DIR)/drivers/usb/host/ehci-hcd.ko $(FILESYSTEM_DIR)/lib/modules/
+	cp $(KERNEL_DIR)/drivers/usb/host/ohci-hcd.ko $(FILESYSTEM_DIR)/lib/modules/
+#	cp $(KERNEL_DIR)/drivers/usb/storage/usb-storage.ko $(FILESYSTEM_DIR)/lib/modules/usbhost/
+#	if test -e $(KERNEL_DIR)/fs/fat/fat.ko; \
+#	then cp $(KERNEL_DIR)/fs/fat/fat.ko $(FILESYSTEM_DIR)/lib/modules/usbhost/; \
+#	fi
+#	if test -e $(KERNEL_DIR)/fs/vfat/vfat.ko; \
+#	then cp $(KERNEL_DIR)/fs/vfat/vfat.ko $(FILESYSTEM_DIR)/lib/modules/usbhost/; \
+#	fi
+#	cp $(KERNEL_DIR)/fs/nls/nls_ascii.ko $(FILESYSTEM_DIR)/lib/modules/usbhost/
+#	if test -e $(KERNEL_DIR)/fs/nls/nls_base.ko; \
+#	then cp $(KERNEL_DIR)/fs/nls/nls_base.ko $(FILESYSTEM_DIR)/lib/modules/usbhost/; \
+#	fi
+#
+#	cp $(KERNEL_DIR)/fs/nls/nls_cp437.ko $(FILESYSTEM_DIR)/lib/modules/usbhost/
+	$(STRIP) --strip-unneeded $(FILESYSTEM_DIR)/lib/modules/*.ko
+ifneq ($(strip $(TCSUPPORT_USB_CAMERA)),)
+	$(SUDO) chmod 777 $(MODULES_USB_CAMERA_DRIVER)/v4l/scripts/*
+	$(MAKE) -C $(MODULES_USB_CAMERA_DRIVER)
+	$(STRIP) --strip-unneeded $(MODULES_USB_CAMERA_DRIVER)/v4l/*.ko
+	$(SUDO) cp $(MODULES_USB_CAMERA_DRIVER)/v4l/usbvideo.ko $(FILESYSTEM_DIR)/lib/modules/
+	$(SUDO) cp $(MODULES_USB_CAMERA_DRIVER)/v4l/v4l1-compat.ko $(FILESYSTEM_DIR)/lib/modules/
+	$(SUDO) cp $(MODULES_USB_CAMERA_DRIVER)/v4l/uvcvideo.ko $(FILESYSTEM_DIR)/lib/modules/
+	$(SUDO) cp $(MODULES_USB_CAMERA_DRIVER)/v4l/videodev.ko $(FILESYSTEM_DIR)/lib/modules/
+endif
+
+
+drivers_clean:
+	echo "Clean mac tcci drivers"
+	$(MAKE) -C $(MODULES_PRIV_SRC_DIR)/tc3162l2hp2h clean
+	$(MAKE) -C $(MODULES_PRIV_SRC_DIR)/tcci clean
+	$(MAKE) -C $(MODULES_USB_CAMERA_DRIVER) clean
+
+wlan:
+	echo "Build WLAN!"
+
+	$(MAKE) -C $(RT5392AP_DIR)
+	if test -e $(RT5392AP_DIR)/os/linux/rt5390ap.ko; \
+	then echo "Compile RT5392 Driver success"; \
+	else echo "Compile RT5392 Driver error!"; exit 1; \
+	fi
+	$(SUDO) cp $(RT5392AP_DIR)/os/linux/rt5390ap.ko $(FILESYSTEM_DIR)/lib/modules/
+	$(SUDO) rm -rf $(FILESYSTEM_DIR)/usr/etc/Wireless/RT2860AP/
+	mkdir $(FILESYSTEM_DIR)/usr/etc/Wireless/RT2860AP/
+	$(SUDO) cp $(RT5392AP_DIR)/RT2860AP.dat $(FILESYSTEM_DIR)/usr/etc/Wireless/RT2860AP/
+	$(SUDO) cp $(RT5392AP_DIR)/RT5392_PCIe_2T2R_ALC_V1_3.bin $(FILESYSTEM_DIR)/usr/etc/RT30xxEEPROM.bin
+	$(SUDO) cp -arpdf $(RT5392AP_DIR)/wifi.sh $(FILESYSTEM_DIR)/usr/bin/wifi
+ifneq ($(strip $(TCSUPPORT_WLAN_ATE)),)
+	$(SUDO) cp $(RT5392AP_DIR)/ATED/ated $(FILESYSTEM_DIR)/usr/bin/ated
+endif
+
+	$(SUDO) rm -rf $(FILESYSTEM_DIR)/usr/etc/Wireless/RT61AP
+	$(SUDO) rm -f $(FILESYSTEM_DIR)/lib/modules/rt61ap.ko
+
+wlan_clean:
+	echo "Clean WLAN!"
+	$(MAKE) -C $(RT5392AP_DIR) clean
+
+#
+#  Build apps ...
+#
+	
+#Build bridge-utils-1.0.6
+brctl:
+	echo "Build bridge-utils-1.0.6"
+	$(MAKE) -C $(APP_BRCTL_DIR)
+	if test -e $(APP_BRCTL_DIR)/brctl/brctl; \
+	then \
+		echo "Compile Brctl success"; \
+	else \
+		echo "Compile Brctl error!"; exit 1; \
+	fi
+	cp  $(APP_BRCTL_DIR)/brctl/brctl  $(FILESYSTEM_DIR)/usr/bin/
+
+brctl_clean:
+	echo "Clean bridge-utils-1.0.6"
+	$(MAKE) -C $(APP_BRCTL_DIR) clean
+
+#Build linux-atm
+libatm:
+	echo "Build linux-atm library"
+	$(MAKE) -C $(APP_LIBATM_DIR)
+	if test -e $(APP_LIBATM_DIR)/lib/libatm.a; \
+	then echo "Compile LIB ATM success"; \
+	else echo "Compile LIB ATM error!"; exit 1; \
+	fi
+
+libatm_clean:
+	echo "Clean linux-atm library"
+	$(MAKE) -C $(APP_LIBATM_DIR) clean
+
+
+#Build br2684ctl
+br2684ctl:
+	echo "Building br2684ctl"
+	$(MAKE) -C $(APP_BR2684CTL_DIR)
+	if test -e $(APP_BR2684CTL_DIR)/br2684ctl; \
+	then echo "Compile Br2684ctl success"; \
+	else echo "Compile Br2684ctl error!"; exit 1; \
+	fi
+	cp  $(APP_BR2684CTL_DIR)/br2684ctl  $(FILESYSTEM_DIR)/usr/bin/
+
+br2684ctl_clean:
+	echo "Clean br2684ctl"
+	$(MAKE) -C $(APP_BR2684CTL_DIR) clean
+
+
+#Build mtd 
+mtd:
+	echo "Build mtd"
+	$(MAKE) -C $(APP_MTD_DIR)
+	if test -e $(APP_MTD_DIR)/mtd; \
+	then \
+		 echo "Compile mtd success"; \
+	else \
+		 echo "Compile mtd error!"; exit 1; \
+	fi
+	cp  $(APP_MTD_DIR)/mtd  $(FILESYSTEM_DIR)/userfs/bin/
+
+mtd_clean:
+	echo "Clean mtd"
+	$(MAKE) -C $(APP_MTD_DIR) clean
+
+#Build mxml
+mxml:
+	echo "Build mxml"
+	$(MAKE) -C $(APP_MXML_DIR)
+	if test -e $(APP_MXML_DIR)/libmxml.so.1.4; \
+	then echo "Compile mxml success"; \
+	else echo "Compile mxml error!"; exit 1; \
+	 fi
+	$(STRIP) --strip-unneeded $(APP_MXML_DIR)/libmxml.so.1.4
+	$(MAKE) -C $(APP_MXML_DIR) install
+	cp -arpdf  $(APP_MXML_DIR)/libmxml.so  $(FILESYSTEM_DIR)/lib/
+	cp -arpdf  $(APP_MXML_DIR)/libmxml.so.*  $(FILESYSTEM_DIR)/lib/
+	mv ${APP_MXML_DIR}/libmxml.so ${LIB_DIR}
+	mv ${APP_MXML_DIR}/libmxml.so.* ${LIB_DIR}
+
+mxml_clean:
+	echo "Clean mxml"
+	$(MAKE) -C $(APP_MXML_DIR) clean
+	rm ${LIB_DIR}/libmxml.* -f
+
+#Build iptables
+iptables:
+	echo "Build iptables"
+	$(MAKE) -C $(APP_IPTABLES_DIR) clean
+	$(MAKE) -C $(APP_IPTABLES_DIR)
+	if test -e $(APP_IPTABLES_DIR)/iptables; \
+	then echo "Compile iptables success"; \
+	else echo "Compile iptables error!"; exit 1; \
+	fi
+	cp  $(APP_IPTABLES_DIR)/iptables  $(FILESYSTEM_DIR)/usr/bin/		
+	
+iptables_clean:
+	echo "Clean iptables"
+	$(MAKE) -C $(APP_IPTABLES_DIR) clean
+
+
+
+
+
+
+
+
+
+
+
+
+#Build ds_lib
+
+ds_lib:
+	echo "Build ds lib!"
+	$(MAKE) -C $(APP_DS_LIB_DIR)
+	if test -e $(APP_DS_LIB_DIR)/libdslib.so;\
+	then echo "Compile ds_lib success";\
+	else echo "Compile ds_lib error!"; exit ;\
+	fi
+	rm -f $(FILESYSTEM_DIR)/lib/libdslib.so >/dev/null 2>&1
+	cp $(APP_DS_LIB_DIR)/libdslib.so $(FILESYSTEM_DIR)/lib
+
+ds_lib_clean:
+	echo "Clean ds lib!"
+	$(MAKE) -C $(APP_DS_LIB_DIR) clean
+
+
+netbios: ds_lib
+	echo "Build ds netbios_scan"
+	$(MAKE) -C $(APP_DS_NETBIOS_DIR)
+	if test -e $(APP_DS_NETBIOS_DIR)/netbios_scan;\
+	then echo "Compile ds netbios_scan success";\
+	else echo "Compile ds netbios_scan error!"; exit ;\
+	fi
+	cp -arpdf $(APP_DS_NETBIOS_DIR)/netbios_scan $(FILESYSTEM_DIR)/bin/
+netbios_clean:
+	echo "Clean netbios"
+	$(MAKE) -C $(APP_DS_NETBIOS_DIR) clean
+
+#Build ds_cgi
+
+
+ds_cgi:
+	echo "Build ds cgi!"
+	$(MAKE) -C $(APP_DS_CGI_DIR)
+	if test -e $(APP_DS_CGI_DIR)/ds_cgi;\
+	then echo "Compile ds_cgi success";\
+	else echo "Compile ds_cgi error!";exit 1;\
+	fi
+	mkdir -p $(FILESYSTEM_DIR)/www/cgi-bin
+	cp -f $(APP_DS_CGI_DIR)/ds_cgi $(FILESYSTEM_DIR)/www/cgi-bin
+ds_cgi_clean:
+	echo "Clean ds cgi!"
+	$(MAKE) -C $(APP_DS_CGI_DIR) clean
+
+#Build ds_cmd
+
+ds_cmd:
+	echo "Build ds cmd!"
+	$(MAKE) -C $(APP_DS_CMD_DIR)
+	if test -e $(APP_DS_CMD_DIR)/ds_cmd;\
+	then echo "Compile ds_cmd success";\
+	else echo "Compile ds_cmd error!";exit 1;\
+	fi
+	cp $(APP_DS_CMD_DIR)/ds_cmd $(FILESYSTEM_DIR)/userfs/bin
+ds_cmd_clean:
+	echo "Clean ds cmd!"
+	$(MAKE) -C $(APP_DS_CMD_DIR) clean
+
+#Build ds_defaultcfg
+
+ds_defaultcfg:
+	echo "Build ds defaultcfg"
+	cp -arpdf $(APP_PRIVATE_DIR)/ds_default_cfg $(FILESYSTEM_DIR)/userfs/
+
+
+#build test
+
+ds_test:
+	echo "Build ds cgi!"
+	$(MAKE) -C $(APP_DS_TEST_DIR)
+	if test -e $(APP_DS_TEST_DIR)/src/ds_test;\
+	then echo "Compile ds_test success";\
+	else echo "Compile ds_test error!";exit 1;\
+	fi
+	cp -f $(APP_DS_TEST_DIR)/src/ds_test $(FILESYSTEM_DIR)/userfs/bin
+	rm -fr $(FILESYSTEM_DIR)/userfs/tc
+	cp -r $(APP_DS_TEST_DIR)/tc $(FILESYSTEM_DIR)/userfs
+	rm -fr $(FILESYSTEM_DIR)/userfs/tc/.svn
+
+ds_test_clean:
+	echo "Clean ds test!"
+	$(MAKE) -C $(APP_DS_TEST_DIR) clean
+	rm -fr $(FILESYSTEM_DIR)/userfs/tc
+
+#build script
+
+ds_scripts:
+	echo "Cp ds_scripts to system"
+	cp -rf $(APP_PRIVATE_DIR)/ds_lib/scripts/* $(FILESYSTEM_DIR)/bin/
+
+
+
+
+
+
+
+
+
+
+#Build ethcmd
+ethcmd:
+	echo "Build ethcmd"
+	$(MAKE) -C $(APP_ETHCMD_DIR)
+	if test -e $(APP_ETHCMD_DIR)/ethcmd; \
+	then \
+		echo "Compile ethcmd success"; \
+	else \
+		echo "Compile ethcmd error!"; exit 1; \
+	fi
+	cp $(APP_ETHCMD_DIR)/ethcmd  $(FILESYSTEM_DIR)/userfs/bin/
+	
+ethcmd_clean:
+	echo "Clean ethcmd"
+	$(MAKE) -C $(APP_ETHCMD_DIR) clean
+
+
+#Build vconfig
+vconfig:
+	echo "Build vconfig"
+	$(MAKE) -C $(APP_VCONFIG_DIR)
+	if test -e $(APP_VCONFIG_DIR)/vconfig; \
+	then \
+		echo "Compile vconfig success"; \
+	else \
+		echo "Compile vconfig error!"; exit 1; \
+	fi
+	cp $(APP_VCONFIG_DIR)/vconfig  $(FILESYSTEM_DIR)/userfs/bin/
+	
+vconfig_clean:
+	echo "Clean vconfig"
+	$(MAKE) -C $(APP_VCONFIG_DIR) clean
+
+
+#Build wireless_tools.28
+wirelesstool:
+	echo "Build wirelesstool"
+	$(MAKE) -C $(APP_WRIELESSTOOL_DIR) clean
+	$(MAKE) -C $(APP_WRIELESSTOOL_DIR)
+	if test -e $(APP_WRIELESSTOOL_DIR)/iwpriv; \
+	then \
+		echo "Compile iwpriv success"; \
+	else \
+		echo "Compile iwpriv error!"; exit 1; \
+	fi
+	if test -e $(APP_WRIELESSTOOL_DIR)/libiw.so.28; \
+	then \
+		 echo "Compile libiw.so.28 success"; \
+	else \
+		echo "Compile libiw.so.28 error!"; exit 1; \
+	fi
+	cp $(APP_WRIELESSTOOL_DIR)/iwpriv  $(FILESYSTEM_DIR)/userfs/bin/
+	cp $(APP_WRIELESSTOOL_DIR)/iwconfig  $(FILESYSTEM_DIR)/userfs/bin/
+
+	cp $(APP_WRIELESSTOOL_DIR)/libiw.so.28  $(FILESYSTEM_DIR)/lib/
+	
+wirelesstool_clean:
+	echo "Clean wirelesstool"
+	$(MAKE) -C $(APP_WRIELESSTOOL_DIR) clean
+	
+#Build tc	
+tc:
+	echo "Build tc"
+	$(MAKE) -C $(APP_IPROUTE_TC_DIR)
+	if test -e $(APP_IPROUTE_TC_DIR)/tc/tc; \
+	then \
+		echo "Compile tc success"; \
+	else \
+		echo "Compile tc error;" exit 1; \
+	fi
+	cp $(APP_IPROUTE_TC_DIR)/tc/tc $(FILESYSTEM_DIR)/usr/bin/
+
+
+tc_clean:
+	echo "Clean tc"
+	$(MAKE) -C $(APP_IPROUTE_TC_DIR) clean	
+	
+pppd:
+	echo "Build pppd"
+	$(MAKE) -C $(APP_PPPD_DIR)
+	if test -e $(APP_PPPD_DIR)/pppd/pppd; \
+	then \
+		 echo "Compile pppd success"; \
+	else \
+		echo "Compile pppd error!"; exit 1; \
+	fi
+
+	if test -e $(APP_PPPD_DIR)/pppd/plugins/pppoatm/libpppoatm.so; \
+	then \
+		echo "Compile libpppoatm.so success"; \
+	else \
+		echo "Compile libpppoatm.so error!"; exit 1; \
+	fi
+	
+	if test -e $(APP_PPPD_DIR)/pppd/plugins/rp-pppoe/libpppoe.so; \
+	then \
+		echo "Compile libpppoe.so success"; \
+	else \
+		echo "Compile libpppoe.so error!"; exit 1; \
+	fi
+	cp $(APP_PPPD_DIR)/pppd/plugins/pppoatm/libpppoatm.so $(FILESYSTEM_DIR)/lib
+	cp $(APP_PPPD_DIR)/pppd/plugins/rp-pppoe/libpppoe.so $(FILESYSTEM_DIR)/lib
+	cp -arpdf $(APP_PPPD_DIR)/pppd/plugins/rp-pppoe/pppoe-discovery $(FILESYSTEM_DIR)/usr/bin/
+	cp -arpdf $(APP_PPPD_DIR)/pppd/pppd $(FILESYSTEM_DIR)/usr/bin/
+	#Copy dns file
+	mkdir -p $(FILESYSTEM_DIR)/usr/etc/ppp/
+	cp -arpdf $(APP_PPPD_DIR)/scripts/ip-up.local.add $(FILESYSTEM_DIR)/usr/etc/ppp/ip-up
+	chmod 777 $(FILESYSTEM_DIR)/usr/etc/ppp/ip-up
+	cp -arpdf $(APP_PPPD_DIR)/scripts/ip-down.local.add $(FILESYSTEM_DIR)/usr/etc/ppp/ip-down
+	chmod 777 $(FILESYSTEM_DIR)/usr/etc/ppp/ip-down
+
+pppd_clean:
+	echo "Clean pppd"
+	$(MAKE) -C $(APP_PPPD_DIR) clean
+	
+#
+#  buildimage
+#
+
+buildimage:
+	echo "buildimage: copy dmt driver"
+	$(SUDO) cp $(DMT_DIR)/3086/tc3162_dmt_3162u.ko $(FILESYSTEM_DIR)/lib/modules/tc3162_dmt.ko
+
+	echo "buildimage: copy libs"
+	cp -arpdf $(PROJECT_LIB_DIR)/mips-linux/. $(FILESYSTEM_DIR)/lib/
+
+	echo "buildimage: copy igd conf"
+	mkdir -p $(FILESYSTEM_DIR)/usr/etc/igd
+	cp $(APP_MU_DIR)/etc_igd/* $(FILESYSTEM_DIR)/usr/etc/igd
+
+	echo "mknod for dev"
+	$(SUDO) rm -rf $(FILESYSTEM_DIR)/dev/*
+	mkdir $(FILESYSTEM_DIR)/dev/pts
+	mkdir $(FILESYSTEM_DIR)/dev/shm
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/console c 4 64
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/gpio c 10 123
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/led c 10 151
+ifneq ($(strip $(TCSUPPORT_QOS)),)
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/qostype c 111 2
+endif
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtd b 31 0
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtd0 c 90 0
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtd1 c 90 2
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtd2 c 90 4
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtd3 c 90 6
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtd4 c 90 8
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtd5 c 90 10
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtdblock0 b 31 0
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtdblock1 b 31 1
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtdblock2 b 31 2
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtdblock3 b 31 3
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtdblock4 b 31 4
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/mtdblock5 b 31 5
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/null c 1 3
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ppp c 108 0
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ptmx c 5 2
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ptyp0 c 2 0
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ptyp1 c 2 1
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ptyp2 c 2 2
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/sda b 8 0
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/sda1 b 8 1
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/sda2 b 8 2
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/sdb b 8 16
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/sdb1 b 8 17
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/sdb2 b 8 18
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/tty c 5 0
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/tty0 c 4 0
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ttyp0 c 3 0
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ttyp1 c 3 1
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ttyp2 c 3 2
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ttyS0 c 4 64
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ttyUSB0 c 188 0 
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ttyUSB1 c 188 1
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ttyUSB2 c 188 2
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/ttyUSB3 c 188 3
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/urandom c 1 9
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/watchdog c 10 130
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/zero c 1 5
+	$(SUDO) mkdir $(FILESYSTEM_DIR)/dev/usb
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/usb/hiddev0 c 180 96 
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/hidraw0 c 254 0
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/hidraw1 c 254 1 
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/hidraw2 c 254 2 
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/hidraw3 c 254 3 
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/hidraw4 c 254 4 
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/gnet c 10 201
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/loop0 b 7 0 
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/loop1 b 7 1 
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/loop2 b 7 2 
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/loop3 b 7 3 
+ifneq ($(strip $(TCSUPPORT_USB_CAMERA)),)
+	$(SUDO) mknod $(FILESYSTEM_DIR)/dev/usb/video0 c 81 0
+	$(SUDO)	chmod 666 $(FILESYSTEM_DIR)/dev/usb/video0
+	$(SUDO) ln -s /dev/usb/video0 $(FILESYSTEM_DIR)/dev/video0
+endif
+
+	echo "buildimage: copy voip PCM ,DSP and SLIC drivers"
+
+	#Copy profile to filesystem
+	rm -f $(FILESYSTEM_DIR)/userfs/profile.cfg
+	cp $(PROFILE_DIR)/$(PROFILE).profile $(FILESYSTEM_DIR)/userfs/profile.cfg
+
+
+	#copy if user modify led.conf for ssw test
+	if test -e $(PROFILE_DIR)/led.conf; \
+	then \
+		cp $(PROFILE_DIR)/led.conf $(FILESYSTEM_DIR)/userfs/led.conf; \
+	fi
+	dos2unix $(FILESYSTEM_DIR)/userfs/led.conf
+	cp -arpdf $(FILESYSTEM_DIR)/usr/etc/inittabdefault $(FILESYSTEM_DIR)/usr/etc/inittab
+ifneq ($(subtype),)
+	cp -arpdf $(FILESYSTEM_DIR)/usr/etc/inittab$(subtype) $(FILESYSTEM_DIR)/usr/etc/inittab
+endif
+	chmod 777 $(FILESYSTEM_DIR)/usr/etc/inittab
+	chmod 777 -R $(FILESYSTEM_DIR)/usr/etc/init.d
+
+	#ln tmp,etc & linuxrc
+	$(SUDO) rm -f $(FILESYSTEM_DIR)/var
+	ln -s /tmp/var $(FILESYSTEM_DIR)/var
+	$(SUDO) rm -f $(FILESYSTEM_DIR)/etc
+	ln -s /tmp/etc $(FILESYSTEM_DIR)/etc
+	$(SUDO) rm -f $(FILESYSTEM_DIR)/linuxrc
+	ln -s bin/busybox $(FILESYSTEM_DIR)/linuxrc	
+	$(SUDO) rm -rf $(TRUNK_DIR)/tmpfilesys
+	mkdir $(TRUNK_DIR)/tmpfilesys
+	$(SUDO) cp -rf $(FILESYSTEM_DIR) $(TRUNK_DIR)/tmpfilesys
+
+ifneq ($(DS_TEST_FRAMEWORK), y)
+	$(SUDO) rm -rf $(TRUNK_DIR)/tmpfilesys/filesystem/www/cgi-test
+endif
+ifeq ($(DS_TEST_FRAMEWORK), y)
+	$(SUDO) mkdir -p $(TRUNK_DIR)/tmpfilesys/filesystem/userfs/dslib
+	$(SUDO) rm -rf $(TRUNK_DIR)/tmpfilesys/filesystem/userfs/web
+	$(SUDO) mv $(TRUNK_DIR)/tmpfilesys/filesystem/www $(TRUNK_DIR)/tmpfilesys/filesystem/userfs/web
+	$(SUDO) ln -s /var/web $(TRUNK_DIR)/tmpfilesys/filesystem/www
+	$(SUDO) rm -rf $(TRUNK_DIR)/tmpfilesys/filesystem/userfs/dslib/libdslib.so
+	$(SUDO) mv $(TRUNK_DIR)/tmpfilesys/filesystem/lib/libdslib.so $(TRUNK_DIR)/tmpfilesys/filesystem/userfs/dslib/
+	$(SUDO) ln -s /var/dslib/libdslib.so $(TRUNK_DIR)/tmpfilesys/filesystem/lib/libdslib.so
+endif
+
+	$(SUDO) find $(TRUNK_DIR)/tmpfilesys -name ".svn" | xargs $(SUDO) rm -rf
+	$(SUDO) find $(TRUNK_DIR)/tmpfilesys -name "CVS" | xargs $(SUDO) rm -rf
+
+	$(SUDO) $(TOOLS_DIR)/mksquashfs-lzma $(TRUNK_DIR)/tmpfilesys/filesystem $(TRUNK_DIR)/rootfs -be -noappend
+	
+	$(SUDO) cp $(TRUNK_DIR)/rootfs $(APP_TCLINUXBUILDER_DIR)
+	$(SUDO) rm -f $(TRUNK_DIR)/rootfs
+	$(SUDO) cp $(KERNEL_DIR)/linux.7z $(APP_TCLINUXBUILDER_DIR)
+	
+	cd $(APP_TCLINUXBUILDER_DIR) && ./buildImage.sh
+	cp -arpdf $(APP_TCLINUXBUILDER_DIR)/tclinux.bin $(PROJECT_DIR)/$(IMAGEDIR)/$(SYSTEM_BIN)	
+	cp -arpdf $(APP_TCLINUXBUILDER_DIR)/tclinux_allinone $(PROJECT_DIR)/$(IMAGEDIR)/$(FLASHALL_BIN)
+#	cp -arpdf $(APP_TCLINUXBUILDER_DIR)/tclinux_allinone.swap $(PROJECT_DIR)/$(IMAGEDIR)
+
+upgrade:
+
+	$(SUDO) rm -rf $(TRUNK_DIR)/tmpfilesys/upgrade/*
+	$(SUDO) rm -rf $(TRUNK_DIR)/tmpfilesys/007bin/*
+
+	$(SUDO) mkdir -p $(UPGRADE_FILE_DIR)
+	$(SUDO) mkdir -p $(UPGRADE_FILE_DIR)/etc
+	$(SUDO) mkdir -p $(UPGRADE_FILE_DIR)/bin
+	$(SUDO) mkdir -p $(UPGRADE_FILE_DIR)/lib/modules
+
+	$(SUDO) mkdir -p $(UPGRADE_BIN_DIR)
+	$(SUDO) mkdir -p $(UPGRADE_FILE_DIR)/userfs/bin
+	$(SUDO) mkdir -p $(UPGRADE_FILE_DIR)/usr/bin
+	$(SUDO) mkdir -p $(UPGRADE_FILE_DIR)/usr/sbin
+	
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/usr/etc/.app_version $(UPGRADE_FILE_DIR)/etc/.app_version
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/usr/etc/app.dat $(UPGRADE_FILE_DIR)/etc/app.dat
+ifneq ($(SYSLANG),EN)
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/usr/etc/app_game.ini $(UPGRADE_FILE_DIR)/etc/app_game.ini
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/usr/etc/qq.ini $(UPGRADE_FILE_DIR)/etc/qq.ini
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/usr/etc/other.ini $(UPGRADE_FILE_DIR)/etc/other.ini
+endif
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/usr/etc/group_name.ini $(UPGRADE_FILE_DIR)/etc/group_name.ini
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/usr/etc/lang.ini $(UPGRADE_FILE_DIR)/etc/lang.ini
+	
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/usr/etc/other.txt $(UPGRADE_FILE_DIR)/etc/other.txt
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/usr/etc/play.txt $(UPGRADE_FILE_DIR)/etc/play.txt
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/usr/etc/study.txt $(UPGRADE_FILE_DIR)/etc/study.txt
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/usr/etc/cgi_remote_ctr_devtype.txt $(UPGRADE_FILE_DIR)/etc/cgi_remote_ctr_devtype.txt
+	
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/bin/tools $(UPGRADE_FILE_DIR)/bin/tools
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/bin/upnpc-static $(UPGRADE_FILE_DIR)/bin/upnpc-static
+#	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/userfs/bin/mjpg_streamer $(UPGRADE_FILE_DIR)/userfs/bin/mjpg_streamer
+#	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/lib/input_uvc.so $(UPGRADE_FILE_DIR)/lib/.
+#	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/lib/output_http.so $(UPGRADE_FILE_DIR)/lib/.
+#	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/lib/output_udp.so $(UPGRADE_FILE_DIR)/lib/.
+
+	$(SUDO) cp -R $(TRUNK_DIR)/tmpfilesys/filesystem/www $(UPGRADE_FILE_DIR)/www
+	$(SUDO) cp -rf $(TRUNK_DIR)/tmpfilesys/filesystem/usr/bin/wifi $(UPGRADE_FILE_DIR)/usr/bin/
+	$(SUDO) cp -rf $(TRUNK_DIR)/tmpfilesys/filesystem/usr/bin/pppd $(UPGRADE_FILE_DIR)/usr/bin/
+	$(SUDO) cp -rf $(TRUNK_DIR)/tmpfilesys/filesystem/usr/bin/pppoe-discovery $(UPGRADE_FILE_DIR)/usr/bin/
+	$(SUDO) cp -rf $(TRUNK_DIR)/tmpfilesys/filesystem/lib/libpppoe.so $(UPGRADE_FILE_DIR)/lib/libpppoe.so
+#	$(SUDO) cp -rf $(TRUNK_DIR)/tmpfilesys/filesystem/lib/libpppoatm.so $(UPGRADE_FILE_DIR)/lib/libpppoatm.so
+	
+
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/lib/modules/ai.ko $(UPGRADE_FILE_DIR)/lib/modules/ai.ko
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/lib/modules/gnet.ko $(UPGRADE_FILE_DIR)/lib/modules/gnet.ko
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/lib/modules/attack_guard.ko $(UPGRADE_FILE_DIR)/lib/modules/attack_guard.ko
+	$(SUDO) cp $(TRUNK_DIR)/tmpfilesys/filesystem/lib/modules/xt_limit.ko $(UPGRADE_FILE_DIR)/lib/modules/xt_limit.ko
+	
+	#add compile httpd in busybox
+	if test -e $(PROFILE_DIR)/busybox_httpd.config; \
+	then \
+		cp $(PROFILE_DIR)/busybox_httpd.config $(APP_BUSYBOX_DIR)/.config; \
+	fi
+	rm -f $(APP_BUSYBOX_DIR)/busybox
+	$(MAKE) -C $(APP_BUSYBOX_DIR)
+	if test -e $(APP_BUSYBOX_DIR)/busybox; \
+	then \
+		echo "Compile BusyBox_httpd success"; \
+		$(SUDO) cp -rf $(APP_BUSYBOX_DIR)/busybox $(UPGRADE_FILE_DIR)/bin/; \
+	else \
+		echo "Compile BusyBox_httpd error!"; exit 1; \
+	fi
+	rm -f $(APP_BUSYBOX_DIR)/.config
+
+
+	$(SUDO) $(TOOLS_DIR)/mksquashfs-lzma $(UPGRADE_FILE_DIR) $(UPGRADE_BIN_DIR)/upgrade.bin -be -noappend
+	$(SUDO) md5sum $(UPGRADE_BIN_DIR)/upgrade.bin > $(UPGRADE_BIN_DIR)/info.txt
+	$(SUDO) echo $(VERSION) >> $(UPGRADE_BIN_DIR)/info.txt
+	$(SUDO) rm -f $(TRUNK_DIR)/tmpfilesys/$(UPGRADE_BIN)
+	cd $(UPGRADE_BIN_DIR) && $(SUDO) tar -zcvf $(TRUNK_DIR)/tmpfilesys/$(UPGRADE_BIN) *
+	$(SUDO) mv $(TRUNK_DIR)/tmpfilesys/$(UPGRADE_BIN) $(PROJECT_DIR)/$(IMAGEDIR)
+
+#md5file: bootbase buildimage upgrade
+md5file:
+	printf "File\t\t\tVersion\tSvnnum\tCompile_Date\t\tSize\t\tMd5str\n" > $(PROJECT_DIR)/$(IMAGEDIR)/$(MD5FILE)
+	if test -e $(PROJECT_DIR)/$(IMAGEDIR)/$(FLASHALL_BIN); \
+	then \
+		 printf "$(FLASHALL_BIN)\t$(VERSION)\t\t$(svnver)\t`date "+%Y-%m-%d %H:%M"`\t`du -b $(PROJECT_DIR)/$(IMAGEDIR)/$(FLASHALL_BIN)|awk '{print $$1}'`\t`md5sum $(PROJECT_DIR)/$(IMAGEDIR)/$(FLASHALL_BIN)|awk '{print $$1}'`\n" >> $(PROJECT_DIR)/$(IMAGEDIR)/$(MD5FILE); \
+	fi
+	if test -e $(PROJECT_DIR)/$(IMAGEDIR)/$(SYSTEM_BIN); \
+	then \
+		 printf "$(SYSTEM_BIN)\t$(VERSION)\t\t$(svnver)\t`date "+%Y-%m-%d %H:%M"`\t`du -b $(PROJECT_DIR)/$(IMAGEDIR)/$(SYSTEM_BIN)|awk '{print $$1}'`\t`md5sum $(PROJECT_DIR)/$(IMAGEDIR)/$(SYSTEM_BIN)|awk '{print $$1}'`\n" >> $(PROJECT_DIR)/$(IMAGEDIR)/$(MD5FILE); \
+	fi
+	if test -e $(PROJECT_DIR)/$(IMAGEDIR)/$(UBOOT_BIN); \
+	then \
+		 printf "$(UBOOT_BIN)\t$(VERSION)\t\t$(svnver)\t`date "+%Y-%m-%d %H:%M"`\t`du -b $(PROJECT_DIR)/$(IMAGEDIR)/$(UBOOT_BIN)|awk '{print $$1}'`\t\t`md5sum $(PROJECT_DIR)/$(IMAGEDIR)/$(UBOOT_BIN)|awk '{print $$1}'`\n" >> $(PROJECT_DIR)/$(IMAGEDIR)/$(MD5FILE); \
+	fi
+	if test -e $(PROJECT_DIR)/$(IMAGEDIR)/$(UPGRADE_BIN); \
+	then \
+		 printf "$(UPGRADE_BIN)\t$(VERSION)\t\t$(svnver)\t`date "+%Y-%m-%d %H:%M"`\t`du -b $(PROJECT_DIR)/$(IMAGEDIR)/$(UPGRADE_BIN)|awk '{print $$1}'`\t`md5sum $(PROJECT_DIR)/$(IMAGEDIR)/$(UPGRADE_BIN)|awk '{print $$1}'`\n" >> $(PROJECT_DIR)/$(IMAGEDIR)/$(MD5FILE); \
+	fi
+	unix2dos $(PROJECT_DIR)/$(IMAGEDIR)/$(MD5FILE)
