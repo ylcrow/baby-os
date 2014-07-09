@@ -28,6 +28,7 @@ KERNEL := $(KERNEL_DIR)/kernel.bin
 all: loader kernel buildimage
 
 clean: loader_clean kernel_clean
+	git checkout image/a.img
 
 
 loader:
