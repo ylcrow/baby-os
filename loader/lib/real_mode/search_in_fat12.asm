@@ -138,6 +138,11 @@ LABEL_FILE_LOADED:
     mov cx, LAD_STRLEN
 	call	_print_str			; 显示字符串
 
+	mov	dh, 2			; "image..."
+    mov bp, image_name
+    mov cx, IMG_NAME_LEN - 5
+	call	_print_str			; 显示字符串
+
     ;KillMotor
 	mov	dx, 03F2h
 	mov	al, 0
