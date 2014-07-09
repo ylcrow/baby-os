@@ -5,6 +5,7 @@ org	 LOADERIMG_OFFSET
 
     jmp loader_start
 
+    ;search_image函数会用到一些变量,可以在精简下
     %include "fat12_hdr.asm" 
 
     desc_gdt:           Descriptor 0,               0,                      0                       ; NULL指针
@@ -74,11 +75,13 @@ pro_mode_start:
 	mov	ss, ax
 	mov	esp, LOADER_PM_STACK_TOP
 
-    call cal_mem_size
+    
+    call cal_mem_size   ;输入参数：mem_info_buf, mem_ards_cnt
+                        ;输出参数：_dwMemSize
+    
+    call enable_mmu     ;输入参数：_dwMemSize
 
-    call enable_mmu
-
-    call init_kernel
+    call init_kernel    ;加载ELF格式kernel
 
 	jmp SELECTOR_FLAT_C:KERNEL_ENNTRY_PHY_ADDR       
 
