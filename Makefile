@@ -16,7 +16,7 @@ export MAKE		= make
 
 ROOTDIR  := $(shell pwd)
 KERNEL_DIR := $(ROOTDIR)/kernel
-LOADER_DIR := $(ROOTDIR)/loader
+LOADER_DIR := $(ROOTDIR)/bootloader
 FLOPPY	:= /mnt/floppy/
 IMAGE 	:= $(ROOTDIR)/image/a.img
 BOOT 	:= $(LOADER_DIR)/boot.bin
