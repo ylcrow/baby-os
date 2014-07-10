@@ -8,10 +8,10 @@ org	 LOADERIMG_OFFSET
     ;search_image函数会用到一些变量,可以在精简下
     %include "fat12_hdr.asm" 
 
-    desc_gdt:           Descriptor 0,               0,                      0                       ; NULL指针
-    desc_flat_c:        Descriptor 0,               0fffffh,                DA_CR|DA_32|DA_LIMIT_4K ; 0~4G
-    desc_flat_rw:       Descriptor 0,               0fffffh,                DA_DRW|DA_LIMIT_4K      ; 0~4G
-    desc_display:       Descriptor 0B8000h,         0ffffh,                 DA_DRW + DA_DPL3        ;  
+    desc_gdt:           Descriptor 0,               0,                      0                               ; NULL指针
+    desc_flat_c:        Descriptor 0,               0fffffh,                DA_CR  | DA_32 | DA_LIMIT_4K    ; 0~4G
+    desc_flat_rw:       Descriptor 0,               0fffffh,                DA_DRW | DA_32 | DA_LIMIT_4K    ; 0~4G
+    desc_display:       Descriptor 0B8000h,         0ffffh,                 DA_DRW | DA_DPL3                ;  
 
     gdt_ptr     dw      $ - desc_gdt - 1                                ;16bits  gdt_limit (gdt_len - 1)
                 dd      LOADERIMG_PHYS_BASE_ADDR + desc_gdt             ;32bits  gdt_baseaddr 
@@ -30,7 +30,7 @@ loader_start:
     mov sp, LOADER_RM_STACK_TOP
 
     ; 获取内存信息
-    call    get_mem_info
+    call    get_mem_info  ;输出参数：mem_info_buf, mem_ards_cnt
 
     ; loader kernel.bin
     call    search_image
