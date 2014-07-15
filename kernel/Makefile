@@ -1,3 +1,21 @@
+DASM 	?= ndisasm
+ASM		?= nasm
+AS      ?= as
+LD      ?= ld
+CC      ?= gcc
+CPP     ?= $(CC) -E
+AR      ?= ar
+NM      ?= nm
+STRIP   ?= strip
+OBJCOPY ?= objcopy
+OBJDUMP ?= objdump
+RANLIB  ?= ranlib
+MKDIR	?= mkdir -p
+MAKE	?= make
+
+
+
+
 
 KERNEL 		:= kernel.bin
 ENTRYPOINT	:= 0x30400
@@ -15,18 +33,22 @@ SRCS_KLIB += $(wildcard ./klib/*.asm)
 DEPS_KLIB := $(SRCS_KLIB:%.c=%.d)
 DEPS_KLIB := $(filter %.d, $(DEPS_KLIB))
 OBJS_KLIB := $(SRCS_KLIB:%.c=%.o)
-OBJS_KLIB += $(SRCS_KLIB:%.asm=%.a)
-OBJS_KLIB := $(filter %.a %.o, $(OBJS_KLIB))
+OBJS_KLIB += $(SRCS_KLIB:%.asm=%.as)
+OBJS_KLIB := $(filter %.as %.o, $(OBJS_KLIB))
 
 SRCS_BOOT := boot.asm start.c
 DEPS_BOOT := $(SRCS_BOOT:%.c=%.d)
 DEPS_BOOT := $(filter %.d, $(DEPS_BOOT))
-OBJS_BOOT := boot.a start.o
+OBJS_BOOT := boot.as start.o
 
 
-$(KERNEL): $(OBJS_BOOT) $(OBJS_KLIB)
+OBJS := $(OBJS_BOOT) $(OBJS_KLIB)
+DEPS := $(DEPS_BOOT) $(DEPS_KLIB)
+
+
+$(KERNEL): $(OBJS)
 	@echo -e "  LD\t$(notdir $@)"
-	@$(LD) $(LDFLAGS) -o $@  $(OBJS_BOOT) $(OBJS_KLIB)
+	@$(LD) $(LDFLAGS) -o $@  $(OBJS)
 	@cp $(KERNEL) $(KERNEL).unstrip
 	@echo -e "  STRIP\t$(notdir $@)"
 	@$(STRIP) $(KERNEL)
@@ -35,11 +57,11 @@ $(KERNEL): $(OBJS_BOOT) $(OBJS_KLIB)
 
 .PHONY: clean
 clean :
-	rm -f $(KERNEL) $(KERNEL).unstrip  $(OBJS_KLIB) $(OBJS_BOOT) $(DEPS_KLIB) $(DEPS_BOOT)
+	rm -f $(KERNEL) $(KERNEL).unstrip  $(OBJS) $(DEPS)
 
 
 
-%.a: %.asm
+%.as: %.asm
 	@echo -e "  ASM\t$(notdir $@)"
 	@$(ASM) $(ASMKFLAGS) -o $@ $<
 
