@@ -49,8 +49,8 @@ buildimage:
 	@dd if=$(BOOT) of=$(IMAGE) bs=512 count=1 conv=notrunc
 	@$(MKDIR) $(FLOPPY)
 	@mount -o loop $(IMAGE) $(FLOPPY)
-	@cp $(LOADER) $(FLOPPY) 
-	@cp $(KERNEL) $(FLOPPY)
+	@cp $(LOADER) $(FLOPPY) -v
+	@cp $(KERNEL) $(FLOPPY) -v
 	@umount $(FLOPPY)
 
 
