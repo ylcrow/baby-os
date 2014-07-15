@@ -1,4 +1,5 @@
 
+export DASM 	= ndisasm
 export ASM		= nasm
 export AS      = as
 export LD      = ld
@@ -28,30 +29,29 @@ KERNEL := $(KERNEL_DIR)/kernel.bin
 all: loader kernel buildimage
 
 clean: loader_clean kernel_clean
-	git checkout image/a.img
+	@git checkout image/a.img
 
 
 loader:
-	$(MAKE) -C $(LOADER_DIR)
+	@$(MAKE) -C $(LOADER_DIR)
 
 loader_clean:
-	-$(MAKE) -C $(LOADER_DIR) clean
+	@-$(MAKE) -C $(LOADER_DIR) clean
 
 
 kernel:	
-	$(MAKE) -C $(KERNEL_DIR)
+	@$(MAKE) -C $(KERNEL_DIR)
 
 kernel_clean:
-	-$(MAKE) -C $(KERNEL_DIR) clean
+	@-$(MAKE) -C $(KERNEL_DIR) clean
 
 buildimage:
-	dd if=$(BOOT) of=$(IMAGE) bs=512 count=1 conv=notrunc
-	$(MKDIR) $(FLOPPY)
-	-umount $(FLOPPY)
-	mount -o loop $(IMAGE) $(FLOPPY)
-	cp $(LOADER) $(FLOPPY) -v
-	cp $(KERNEL) $(FLOPPY) -v
-	umount $(FLOPPY)
+	@dd if=$(BOOT) of=$(IMAGE) bs=512 count=1 conv=notrunc
+	@$(MKDIR) $(FLOPPY)
+	@mount -o loop $(IMAGE) $(FLOPPY)
+	@cp $(LOADER) $(FLOPPY) 
+	@cp $(KERNEL) $(FLOPPY)
+	@umount $(FLOPPY)
 
 
 

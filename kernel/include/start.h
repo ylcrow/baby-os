@@ -51,7 +51,7 @@ extern void     hwint15(void);
 extern u8              gdt_ptr[6];
 extern descriptor_t    gdt[GDT_SIZE];
 extern u8              idt_ptr[6];
-extern date_t          idt[IDT_SIZE];
+extern gate_t          idt[IDT_SIZE];
 
 
 extern void prepare_gdt(void);

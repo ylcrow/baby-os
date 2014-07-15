@@ -23,7 +23,7 @@
 u8              gdt_ptr[6];
 descriptor_t    gdt[GDT_SIZE];
 u8              idt_ptr[6];
-date_t          idt[IDT_SIZE];
+gate_t          idt[IDT_SIZE];
 
 
 static void init_idt_desc(u8 vector, u8 desc_type, int_handler handler, u8 privilege)
@@ -31,7 +31,7 @@ static void init_idt_desc(u8 vector, u8 desc_type, int_handler handler, u8 privi
 	gate_t*	p_gate	= &idt[vector];
 	u32	base	= (u32)handler;
 	p_gate->offset_low	= base & 0xFFFF;
-	p_gate->selector	= SELECTOR_KERNEL_CS;
+	p_gate->selector	= SELECTOR_FLAT_C;
 	p_gate->dcount		= 0;
 	p_gate->attr		= desc_type | (privilege << 5);
 	p_gate->offset_high	= (base >> 16) & 0xFFFF;
