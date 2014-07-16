@@ -252,7 +252,7 @@ void prepare_gdt(void)
 
 
     /* GDT需要与Loader的GDT一样, copy */
-	memcpy(&gdt, (void*)p_gdt_base, *p_gdt_limit + 1);
+	memcpy(&gdt, (void*)*p_gdt_base, *p_gdt_limit + 1);
 
 
 	*p_gdt_limit = GDT_SIZE * sizeof(descriptor_t) - 1;

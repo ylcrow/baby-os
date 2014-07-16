@@ -33,13 +33,13 @@ SRCS_KLIB += $(wildcard ./klib/*.asm)
 DEPS_KLIB := $(SRCS_KLIB:%.c=%.d)
 DEPS_KLIB := $(filter %.d, $(DEPS_KLIB))
 OBJS_KLIB := $(SRCS_KLIB:%.c=%.o)
-OBJS_KLIB += $(SRCS_KLIB:%.asm=%.as)
-OBJS_KLIB := $(filter %.as %.o, $(OBJS_KLIB))
+OBJS_KLIB += $(SRCS_KLIB:%.asm=%.obj)
+OBJS_KLIB := $(filter %.obj %.o, $(OBJS_KLIB))
 
 SRCS_BOOT := boot.asm start.c
 DEPS_BOOT := $(SRCS_BOOT:%.c=%.d)
 DEPS_BOOT := $(filter %.d, $(DEPS_BOOT))
-OBJS_BOOT := boot.as start.o
+OBJS_BOOT := boot.obj start.o
 
 
 OBJS := $(OBJS_BOOT) $(OBJS_KLIB)
@@ -61,7 +61,7 @@ clean :
 
 
 
-%.as: %.asm
+%.obj: %.asm
 	@echo -e "  ASM\t$(notdir $@)"
 	@$(ASM) $(ASMKFLAGS) -o $@ $<
 
