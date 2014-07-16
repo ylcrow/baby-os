@@ -15,8 +15,8 @@ _start:
     jmp SELECTOR_FLAT_C:_restart
 
 _restart:
-    ;ud2
-    ;jmp 0x40:0
+    ;ud2  ;exception 6 UD
+    ;jmp 0x40:0 ;exception 13 GP
     sti
     hlt
 

@@ -14,10 +14,8 @@ MKDIR	?= mkdir -p
 MAKE	?= make
 
 
-
-
-
 KERNEL 		:= kernel.bin
+KERNEL_DUMP := dump.asm
 ENTRYPOINT	:= 0x30400
 ENTRYOFFSET	:= 0x400
 
@@ -55,9 +53,17 @@ $(KERNEL): $(OBJS)
 
 
 
+
+dump:
+	$(DASM) $(DASMFLAGS) $(KERNEL).unstrip > $(KERNEL_DUMP)
+
+
+
+
+
 .PHONY: clean
 clean :
-	rm -f $(KERNEL) $(KERNEL).unstrip  $(OBJS) $(DEPS)
+	rm -f $(KERNEL) $(KERNEL).unstrip  $(OBJS) $(DEPS)  $(KERNEL_DUMP)
 
 
 

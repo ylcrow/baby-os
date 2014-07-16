@@ -237,6 +237,7 @@ void exception_handler(int vec_no,int err_code,int eip,int cs,int eflags)
 
 void spurious_irq(int irq)
 {
+	    disp_pos = 0;
         disp_str("spurious_irq: ");
         disp_int(irq);
         disp_str("\n");
@@ -257,6 +258,11 @@ void prepare_gdt(void)
 
 	*p_gdt_limit = GDT_SIZE * sizeof(descriptor_t) - 1;
 	*p_gdt_base  = (u32)&gdt;
+
+
+    /* 提取赋值0，避免打印时出现gs访问溢出 */
+	disp_pos = 0;
+
 }
 
 
