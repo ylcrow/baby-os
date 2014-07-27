@@ -10,9 +10,8 @@
 **************************************************************************/
 #ifndef __START_H__ 
 #define __START_H__
-#include "protect.h"
 
-
+extern void     restore_scene();
 extern void	    divide_error(void);
 extern void	    single_step_exception(void);
 extern void	    nmi(void);
@@ -46,18 +45,6 @@ extern void     hwint13(void);
 extern void     hwint14(void);
 extern void     hwint15(void);
 
-
-
-extern u8              gdt_ptr[6];
-extern descriptor_t    gdt[GDT_SIZE];
-extern u8              idt_ptr[6];
-extern gate_t          idt[IDT_SIZE];
-
-
-extern void prepare_gdt(void);
-extern void prepare_idt(void);
-extern void spurious_irq(int irq);
-extern void exception_handler(int vec_no,int err_code,int eip,int cs,int eflags);
 
 #endif /* __START_H__ */
 

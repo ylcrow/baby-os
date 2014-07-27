@@ -1,4 +1,3 @@
-
 [SECTION .text]
 
 global out_byte
@@ -27,4 +26,8 @@ in_byte:
 	nop	; 一点延迟
 	nop
 	ret
+
+
+
+
 

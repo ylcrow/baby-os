@@ -1,4 +1,5 @@
-%include "boot.inc"
+%include "start.inc"
+%include "const.inc"
 
 
 [section .text]
@@ -15,10 +16,109 @@ _start:
     jmp SELECTOR_FLAT_C:_restart
 
 _restart:
-    ;ud2  ;exception 6 UD
-    ;jmp 0x40:0 ;exception 13 GP
-    sti
-    hlt
+    xor eax, eax
+    mov ax, SELECTOR_TSS
+    ltr ax
+
+    jmp kernel_main
+
+save_scene:
+    pushad          ; `.
+    push    ds      ;  |
+    push    es      ;  | 保存原寄存器值
+    push    fs      ;  |
+    push    gs      ; /
+    mov     dx, ss
+    mov     ds, dx
+    mov     es, dx
+    
+    mov     eax, esp                   
+
+    inc     dword [k_reenter]    
+    cmp     dword [k_reenter], 0 
+    jne     .r_enter                   
+;-------------------------------
+    mov     ebx, [next_process_ptr]
+    cmp     dword [ebx + PROCESS_TASK_TYPE_OFFSET], TASK_TYPE_USER
+    je      .u_task1
+    mov     [ebx + STACKFRAME_ESP_OFFSET], eax
+.u_task1:
+;-------------------------------
+    mov     esp, STACK_TOP
+    push    restore_scene              
+    jmp     [eax + STACKFRAME_RETADR_OFFSET]
+.r_enter:                              
+    push    restore_reenter_scene      
+    jmp     [eax + STACKFRAME_RETADR_OFFSET]
+
+
+restore_scene:              
+	mov	esp, [next_process_ptr]
+	lldt	[esp + PROCESS_LDT_OFFSET] 
+;--------------------------------
+    cmp     dword [esp + PROCESS_TASK_TYPE_OFFSET], TASK_TYPE_USER
+    je      .u_task2
+    mov     esp, [esp + STACKFRAME_ESP_OFFSET]
+    jmp     restore_reenter_scene
+.u_task2:
+;--------------------------------
+	lea	eax, [esp + STACKFRAME_SIZE]
+	mov	dword [tss + TSS_ESP0_OFFSET], eax
+restore_reenter_scene:
+	dec	dword [k_reenter]
+	pop	gs
+	pop	fs
+	pop	es
+	pop	ds
+	popad
+	add	esp, 4
+	iretd
+
+
+; ---------------------------------
+%macro  hwint_master    1
+        ; 保存现场
+        call save_scene
+
+        ; 屏蔽当前中断
+	    in	al, INT_M_CTLMASK
+	    or	al, (1 << %1)		
+	    out	INT_M_CTLMASK, al	
+
+        ; 发送EOI
+	    mov	al, EOI			
+	    out	INT_M_CTL, al	
+
+        ; 打开中断
+	    sti	
+
+        ; 调用中断处理方法
+        push    %1
+	    call	[irq_table + 4 * %1]
+        pop     ecx         ;add     esp, 4
+
+        ; 关闭中断
+        cli
+
+        ; 恢复接受当前中断
+    	in	al, INT_M_CTLMASK	
+    	and	al, ~(1 << %1)		
+    	out	INT_M_CTLMASK, al	
+
+        ret
+%endmacro
+; ---------------------------------
+
+
+
+; ---------------------------------
+%macro  hwint_slave     1
+        push    %1
+        call    spurious_irq
+        add     esp, 4
+        hlt
+%endmacro
+; ---------------------------------
 
 
 

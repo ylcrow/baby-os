@@ -20,24 +20,24 @@ ENTRYPOINT	:= 0x30400
 ENTRYOFFSET	:= 0x400
 
 
-CFLAGS 		+= -I include/ -c -fno-builtin
-ASMKFLAGS 	+= -I include/ -f elf
+CFLAGS 		+= -I include/ -I ./ -c -fno-builtin
+ASMKFLAGS 	+= -I include/ -I ./ -f elf
 LDFLAGS 	+= -Ttext $(ENTRYPOINT)
 DASMFLAGS	+= -u -o $(ENTRYPOINT) -e $(ENTRYOFFSET)
 
 
-SRCS_KLIB := $(wildcard ./klib/*.c)
-SRCS_KLIB += $(wildcard ./klib/*.asm)
+SRCS_KLIB := $(wildcard ./*/*.c)
+SRCS_KLIB += $(wildcard ./*/*.asm)
 DEPS_KLIB := $(SRCS_KLIB:%.c=%.d)
 DEPS_KLIB := $(filter %.d, $(DEPS_KLIB))
 OBJS_KLIB := $(SRCS_KLIB:%.c=%.o)
 OBJS_KLIB += $(SRCS_KLIB:%.asm=%.obj)
 OBJS_KLIB := $(filter %.obj %.o, $(OBJS_KLIB))
 
-SRCS_BOOT := boot.asm start.c
+SRCS_BOOT := start.asm  start.c
 DEPS_BOOT := $(SRCS_BOOT:%.c=%.d)
 DEPS_BOOT := $(filter %.d, $(DEPS_BOOT))
-OBJS_BOOT := boot.obj start.o
+OBJS_BOOT := start.obj  start.o
 
 
 OBJS := $(OBJS_BOOT) $(OBJS_KLIB)
